@@ -1,0 +1,21 @@
+.penseed-result h2 {
+  margin-bottom: 0.6em;
+}
+
+.penseed-result .penseed-cta-label {
+  margin-top: 1.2em;
+  margin-bottom: 0.25em;
+  font-weight: 600;
+}
+
+.penseed-result ul {
+  margin-bottom: 1em;
+}
+
+.penseed-result .penseed-open-button {
+  display: block;
+  width: 100%;
+  margin-top: 0.5em;
+  padding: 0.5em;
+  cursor: pointer;
+}

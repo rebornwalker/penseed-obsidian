@@ -1,0 +1,20 @@
+{
+  "name": "penseed-obsidian-plugin",
+  "version": "1.0.0",
+  "description": "Penseed Obsidian plugin — analyze a note for foreshadowing and entity consistency, then continue on Penseed.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+  },
+  "keywords": ["obsidian", "writing", "foreshadowing", "novel"],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.25.5",
+    "obsidian": "latest",
+    "tslib": "^2.6.3",
+    "typescript": "^5.8.3"
+  }
+}
