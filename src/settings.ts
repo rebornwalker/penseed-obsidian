@@ -52,7 +52,7 @@ export class PenseedSettingTab extends PluginSettingTab {
             .setValue(this.plugin.settings.tokenSecretName)
             .onChange((value) => {
               this.plugin.settings.tokenSecretName = value;
-              this.plugin.saveSettings();
+              void this.plugin.saveSettings();
             })
       );
   }

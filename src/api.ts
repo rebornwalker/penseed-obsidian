@@ -65,7 +65,7 @@ async function request<T>(
       contentType: "application/json",
       throw: false,
     });
-  } catch (e) {
+  } catch {
     // Network-level failure (DNS, connection refused, etc.)
     throw new ApiError("Unable to connect to Penseed.");
   }
@@ -96,7 +96,7 @@ async function request<T>(
 
   try {
     return response.json as T;
-  } catch (e) {
+  } catch {
     throw new ApiError("Penseed analysis failed.");
   }
 }
