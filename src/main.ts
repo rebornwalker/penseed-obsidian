@@ -34,7 +34,7 @@ function smartWordCount(text: string): number {
 class ProjectSuggestModal extends SuggestModal<PenseedProject> {
   private projects: PenseedProject[];
   private resolve: (project: PenseedProject | null) => void;
-  private chosen = false;
+  private settled = false;
 
   constructor(
     app: import("obsidian").App,
@@ -61,14 +61,21 @@ class ProjectSuggestModal extends SuggestModal<PenseedProject> {
     project: PenseedProject,
     evt: MouseEvent | KeyboardEvent
   ): void {
-    this.chosen = true;
+    this.settled = true;
     this.resolve(project);
   }
 
   onClose(): void {
-    if (!this.chosen) {
-      this.resolve(null);
-    }
+    // Obsidian calls close() BEFORE onChooseSuggestion() when a suggestion is
+    // selected, so resolving null here would win the race and swallow the
+    // choice. Defer cancellation to the next task; a real selection (which
+    // fires synchronously right after close) then wins instead.
+    setTimeout(() => {
+      if (!this.settled) {
+        this.settled = true;
+        this.resolve(null);
+      }
+    }, 0);
     super.onClose();
   }
 }
@@ -82,6 +89,10 @@ export default class PenseedPlugin extends Plugin {
     this.auth = new PenseedAuthManager(this.app, this.settings.apiUrl);
 
     this.addSettingTab(new PenseedSettingTab(this.app, this));
+
+    this.addRibbonIcon("feather", "Analyze current note with Penseed", () => {
+      this.analyzeCurrentNote();
+    });
 
     this.addCommand({
       id: "analyze-current-note",

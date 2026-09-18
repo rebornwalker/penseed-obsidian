@@ -78,6 +78,12 @@ async function request<T>(
       status
     );
   }
+  if (status === 402) {
+    throw new ApiError(
+      "Your Penseed AI quota is exhausted. Upgrade your plan or wait for it to reset.",
+      status
+    );
+  }
   if (status === 429) {
     throw new ApiError(
       "Penseed usage limit reached. Please try again later.",
