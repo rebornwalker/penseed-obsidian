@@ -30,8 +30,47 @@ export interface PenseedChapter {
 
 export interface ForeshadowingCandidate {
   text: string;
+  context?: string;
   confidence: number;
+  start_position?: number;
+  end_position?: number;
+  is_foreshadowing?: boolean;
+  foreshadowing_type?: string | null;
+  target_elements?: string[] | null;
+  emotional_tone?: string | null;
+  narrative_function?: string | null;
+  analysis?: string | null;
+  improvement_suggestions?: string[] | null;
+  foreshadowing_text_preview?: string | null;
   [key: string]: unknown;
+}
+
+export interface ForeshadowingListResult {
+  items: Array<{ foreshadowing_text_preview?: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+}
+
+export interface ForeshadowingSavePayload {
+  project_id: number;
+  chapter_id: number;
+  foreshadowing_text_preview: string;
+  confidence: number;
+  start_position: number;
+  end_position: number;
+  is_foreshadowing: boolean;
+  foreshadowing_type?: string | null;
+  target_elements?: string[] | null;
+  emotional_tone?: string | null;
+  narrative_function?: string | null;
+  analysis?: string | null;
+  improvement_suggestions?: string[] | null;
+}
+
+export interface EntitySavePayload {
+  project_id: number;
+  chapter_id: number;
+  chapter_number: number | null;
+  entities: Array<{ name: string; type?: string; [key: string]: unknown }>;
 }
 
 export interface ForeshadowingExtractResult {
@@ -166,4 +205,44 @@ export async function extractEntities(
     content,
     project_id: projectId,
   });
+}
+
+export async function listForeshadowings(
+  apiUrl: string,
+  token: string,
+  chapterId: number,
+  projectId: number
+): Promise<ForeshadowingListResult> {
+  const params = new URLSearchParams();
+  params.set("chapter_id", String(chapterId));
+  params.set("project_id", String(projectId));
+  params.set("limit", "1000");
+  return request<ForeshadowingListResult>(
+    apiUrl,
+    token,
+    `/api/foreshadowing/?${params.toString()}`,
+    "GET"
+  );
+}
+
+export async function saveForeshadowing(
+  apiUrl: string,
+  token: string,
+  payload: ForeshadowingSavePayload
+): Promise<unknown> {
+  return request<unknown>(apiUrl, token, "/api/foreshadowing/", "POST", payload);
+}
+
+export async function saveEntities(
+  apiUrl: string,
+  token: string,
+  payload: EntitySavePayload
+): Promise<{ saved_count: number }> {
+  return request<{ saved_count: number }>(
+    apiUrl,
+    token,
+    "/api/entities/save",
+    "POST",
+    payload
+  );
 }

@@ -10,6 +10,9 @@ import {
   createChapter,
   extractForeshadowing,
   extractEntities,
+  listForeshadowings,
+  saveForeshadowing,
+  saveEntities,
   PenseedProject,
 } from "./api";
 import { AnalysisResultModal } from "./ui";
@@ -180,13 +183,64 @@ export default class PenseedPlugin extends Plugin {
         content
       );
 
+      // 按章节去重：先取该章已有伏笔，跳过重复的候选
+      const existing = await listForeshadowings(apiUrl, token, chapter.id, projectId);
+      const existingPreviews = new Set(
+        (existing.items ?? [])
+          .map((f) => (f.foreshadowing_text_preview ?? "").trim())
+          .filter((s) => s.length > 0)
+      );
+
+      let savedForeshadowing = 0;
+      let skippedForeshadowing = 0;
+      for (const c of foreshadowing.candidates) {
+        const preview = (c.foreshadowing_text_preview ?? c.text ?? "").trim();
+        if (!preview) continue;
+        if (existingPreviews.has(preview)) {
+          skippedForeshadowing++;
+          continue;
+        }
+        try {
+          await saveForeshadowing(apiUrl, token, {
+            project_id: projectId,
+            chapter_id: chapter.id,
+            foreshadowing_text_preview: preview,
+            confidence: c.confidence ?? 0,
+            start_position: c.start_position ?? -1,
+            end_position: c.end_position ?? -1,
+            is_foreshadowing: c.is_foreshadowing ?? true,
+            foreshadowing_type: c.foreshadowing_type ?? null,
+            target_elements: c.target_elements ?? null,
+            emotional_tone: c.emotional_tone ?? null,
+            narrative_function: c.narrative_function ?? null,
+            analysis: c.analysis ?? null,
+            improvement_suggestions: c.improvement_suggestions ?? null,
+          });
+          existingPreviews.add(preview);
+          savedForeshadowing++;
+        } catch (e) {
+          console.error("[Penseed] Failed to save foreshadowing candidate", e);
+        }
+      }
+
       const entities = await extractEntities(apiUrl, token, projectId, content);
+      let savedEntities = 0;
+      if (entities.entities && entities.entities.length > 0) {
+        const res = await saveEntities(apiUrl, token, {
+          project_id: projectId,
+          chapter_id: chapter.id,
+          chapter_number: chapter.chapter_number ?? null,
+          entities: entities.entities,
+        });
+        savedEntities = res.saved_count ?? entities.entities.length;
+      }
 
       notice.hide();
 
       new AnalysisResultModal(this.app, {
-        foreshadowingCount: foreshadowing.candidates.length,
-        entityCount: entities.entity_count,
+        foreshadowingCount: savedForeshadowing,
+        foreshadowingSkipped: skippedForeshadowing,
+        entityCount: savedEntities,
         projectId,
       }).open();
     } catch (e) {

@@ -2,6 +2,7 @@ import { App, Modal } from "obsidian";
 
 export interface AnalysisSummary {
   foreshadowingCount: number;
+  foreshadowingSkipped: number;
   entityCount: number;
   projectId: number;
 }
@@ -23,13 +24,19 @@ export class AnalysisResultModal extends Modal {
 
     contentEl.createEl("h2", { text: "Penseed Analysis" });
 
+    const skippedText =
+      this.summary.foreshadowingSkipped > 0
+        ? ` (skipped ${this.summary.foreshadowingSkipped} duplicate${
+            this.summary.foreshadowingSkipped === 1 ? "" : "s"
+          })`
+        : "";
     contentEl.createEl("div", {
-      text: `AI extracted ${this.summary.foreshadowingCount} foreshadowing ${
+      text: `Saved ${this.summary.foreshadowingCount} foreshadowing ${
         this.summary.foreshadowingCount === 1 ? "candidate" : "candidates"
-      }`,
+      }${skippedText}`,
     });
     contentEl.createEl("div", {
-      text: `AI extracted ${this.summary.entityCount} entity ${
+      text: `Saved ${this.summary.entityCount} entity ${
         this.summary.entityCount === 1 ? "candidate" : "candidates"
       }`,
     });
