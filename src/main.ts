@@ -13,6 +13,7 @@ import {
   PenseedProject,
 } from "./api";
 import { AnalysisResultModal } from "./ui";
+import { PenseedAuthManager } from "./auth";
 
 function extractChapterNumber(filename: string): number | null {
   const match = filename.match(/\d+/);
@@ -73,10 +74,12 @@ class ProjectSuggestModal extends SuggestModal<PenseedProject> {
 }
 
 export default class PenseedPlugin extends Plugin {
-  settings: PenseedSettings;
+  settings!: PenseedSettings;
+  auth!: PenseedAuthManager;
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    this.auth = new PenseedAuthManager(this.app, this.settings.apiUrl);
 
     this.addSettingTab(new PenseedSettingTab(this.app, this));
 
@@ -99,12 +102,6 @@ export default class PenseedPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
-  private getToken(): string | null {
-    const name = this.settings.tokenSecretName;
-    if (!name) return null;
-    return this.app.secretStorage.getSecret(name) || null;
-  }
-
   private async analyzeCurrentNote(): Promise<void> {
     const file = this.app.workspace.getActiveFile();
     if (!file || file.extension !== "md") {
@@ -112,9 +109,9 @@ export default class PenseedPlugin extends Plugin {
       return;
     }
 
-    const token = this.getToken();
+    const token = await this.auth.getAccessToken();
     if (!token) {
-      new Notice("Please sign in to Penseed in Settings.");
+      new Notice("Please connect to Penseed in Settings first.");
       return;
     }
 

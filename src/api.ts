@@ -74,7 +74,7 @@ async function request<T>(
 
   if (status === 401 || status === 403) {
     throw new ApiError(
-      "Penseed authentication failed. Please check your token in Settings.",
+      "Penseed authentication failed. Please reconnect to Penseed in Settings.",
       status
     );
   }

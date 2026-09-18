@@ -1,7 +1,7 @@
 {
   "id": "penseed",
   "name": "Penseed",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "minAppVersion": "1.11.4",
   "description": "Analyze a note for foreshadowing and entity consistency with AI, then continue tracking the full loop on Penseed.",
   "author": "Penseed",
