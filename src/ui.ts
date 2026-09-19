@@ -4,6 +4,7 @@ export interface AnalysisSummary {
   foreshadowingCount: number;
   foreshadowingSkipped: number;
   entityCount: number;
+  resolvedCount?: number;
   projectId: number;
 }
 
@@ -40,6 +41,14 @@ export class AnalysisResultModal extends Modal {
         this.summary.entityCount === 1 ? "candidate" : "candidates"
       }`,
     });
+
+    if (this.summary.resolvedCount !== undefined) {
+      contentEl.createEl("div", {
+        text: `Resolved ${this.summary.resolvedCount} foreshadowing${
+          this.summary.resolvedCount === 1 ? "" : "s"
+        }`,
+      });
+    }
 
     contentEl
       .createEl("p", { text: "Open in Penseed to:" })

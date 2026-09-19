@@ -13,6 +13,7 @@ import {
   listForeshadowings,
   saveForeshadowing,
   saveEntities,
+  analyzeChapterResolution,
   PenseedProject,
 } from "./api";
 import { AnalysisResultModal } from "./ui";
@@ -235,12 +236,35 @@ export default class PenseedPlugin extends Plugin {
         savedEntities = res.saved_count ?? entities.entities.length;
       }
 
+      // 伏笔回收分析：把结构化摘要写回章节（chapter_id 已传，后端自动落库）
+      let resolvedCount = 0;
+      try {
+        const resolution = await analyzeChapterResolution(
+          apiUrl,
+          token,
+          projectId,
+          chapter.id,
+          content
+        );
+        if (resolution.success) {
+          resolvedCount = resolution.data?.stats?.foreshadowings_resolved ?? 0;
+        } else {
+          console.warn(
+            "[Penseed] Resolution analysis returned failure",
+            resolution.error
+          );
+        }
+      } catch (e) {
+        console.error("[Penseed] Resolution analysis failed", e);
+      }
+
       notice.hide();
 
       new AnalysisResultModal(this.app, {
         foreshadowingCount: savedForeshadowing,
         foreshadowingSkipped: skippedForeshadowing,
         entityCount: savedEntities,
+        resolvedCount,
         projectId,
       }).open();
     } catch (e) {

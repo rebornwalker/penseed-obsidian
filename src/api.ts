@@ -246,3 +246,43 @@ export async function saveEntities(
     payload
   );
 }
+
+export interface ResolutionAnalysisResult {
+  success: boolean;
+  data?: {
+    chapter_summary: Record<string, unknown>;
+    resolved_foreshadowings: Array<Record<string, unknown>>;
+    stats?: {
+      candidates_recalled?: number;
+      foreshadowings_resolved?: number;
+      [key: string]: unknown;
+    };
+  };
+  error?: { code: string; message: string };
+}
+
+/**
+ * Run foreshadowing resolution analysis for a chapter. Passing `chapter_id`
+ * makes the backend persist the structured summary (revelations, resolutions,
+ * plot advances, world mechanics, key entities) onto the chapter row — no
+ * separate save-chapter-summary call is needed.
+ */
+export async function analyzeChapterResolution(
+  apiUrl: string,
+  token: string,
+  projectId: number,
+  chapterId: number,
+  content: string
+): Promise<ResolutionAnalysisResult> {
+  return request<ResolutionAnalysisResult>(
+    apiUrl,
+    token,
+    "/api/foreshadowing/analyze-resolution",
+    "POST",
+    {
+      chapter_content: content,
+      project_id: projectId,
+      chapter_id: chapterId,
+    }
+  );
+}
