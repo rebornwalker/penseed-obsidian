@@ -247,7 +247,11 @@ export default class PenseedPlugin extends Plugin {
           content
         );
         if (resolution.success) {
-          resolvedCount = resolution.data?.stats?.foreshadowings_resolved ?? 0;
+          const resolvedForeshadowings =
+            resolution.data?.resolved_foreshadowings ?? [];
+          resolvedCount = resolvedForeshadowings.filter(
+            (item) => item.is_resolved === true
+          ).length;
         } else {
           console.warn(
             "[Penseed] Resolution analysis returned failure",
