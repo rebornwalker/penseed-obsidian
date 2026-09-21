@@ -12,6 +12,7 @@ export interface ReanalysisSummary {
   addedForeshadowings: number;
   deletedForeshadowings: number;
   semanticChangedCount: number;
+  resolvedCount: number;
   estimatedReplayCredits: number;
   projectId: number;
   affected: ReplayItem[];
@@ -66,6 +67,14 @@ export class ReanalysisResultModal extends Modal {
         text: `${this.summary.semanticChangedCount} foreshadowing${plural(
           this.summary.semanticChangedCount
         )} changed meaning`,
+      });
+    }
+
+    if (this.summary.resolvedCount > 0) {
+      contentEl.createEl("div", {
+        text: `${this.summary.resolvedCount} foreshadowing${plural(
+          this.summary.resolvedCount
+        )} resolved`,
       });
     }
 

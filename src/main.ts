@@ -191,6 +191,7 @@ export default class PenseedPlugin extends Plugin {
         addedForeshadowings: result.added_foreshadowings,
         deletedForeshadowings: result.deleted_foreshadowings,
         semanticChangedCount: result.semantic_changed_count,
+        resolvedCount: result.foreshadowings_resolved,
         estimatedReplayCredits: result.estimated_replay_credits,
         projectId,
         affected,

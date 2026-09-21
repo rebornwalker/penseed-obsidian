@@ -37,6 +37,7 @@ export interface ReanalyzeResult {
   added_foreshadowings: number;
   semantic_changed_count: number;
   orphan_entities_deleted: number;
+  foreshadowings_resolved: number;
   estimated_replay_credits: number;
 }
 
