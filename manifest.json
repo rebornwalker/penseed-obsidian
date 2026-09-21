@@ -1,9 +1,9 @@
 {
   "id": "penseed",
   "name": "Penseed",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "minAppVersion": "1.11.4",
-  "description": "Analyze a note for foreshadowing and entity consistency with AI, then continue tracking the full loop on Penseed.",
+  "description": "Never lose a plot thread. Analyze notes for foreshadowing, character, and world consistency, then track the full loop on Penseed.",
   "author": "Penseed",
   "authorUrl": "https://penseed.app",
   "isDesktopOnly": false
