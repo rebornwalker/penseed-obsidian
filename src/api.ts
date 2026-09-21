@@ -28,6 +28,18 @@ export interface PenseedChapter {
   [key: string]: unknown;
 }
 
+export interface ReanalyzeResult {
+  chapter_id: number;
+  entity_count: number;
+  foreshadowing_count: number;
+  affected_downstream_chapters: number[];
+  deleted_foreshadowings: number;
+  added_foreshadowings: number;
+  semantic_changed_count: number;
+  orphan_entities_deleted: number;
+  estimated_replay_credits: number;
+}
+
 export interface ForeshadowingCandidate {
   text: string;
   context?: string;
@@ -151,6 +163,44 @@ export async function listProjects(
   token: string
 ): Promise<PenseedProject[]> {
   return request<PenseedProject[]>(apiUrl, token, "/api/projects/", "GET");
+}
+
+export async function listChapters(
+  apiUrl: string,
+  token: string,
+  projectId: number
+): Promise<PenseedChapter[]> {
+  const params = new URLSearchParams();
+  params.set("project_id", String(projectId));
+  params.set("limit", "1000");
+  params.set("order_by", "chapter_number");
+  params.set("order_desc", "false");
+  return request<PenseedChapter[]>(
+    apiUrl,
+    token,
+    `/api/chapters/?${params.toString()}`,
+    "GET"
+  );
+}
+
+/**
+ * Phase 0.11 in-place reanalysis: recompute a chapter's entities, foreshadowing
+ * diff, resolution, vectors, baseline and conflict detection from the new text.
+ * Returns the downstream chapters that were marked stale as a result.
+ */
+export async function reanalyzeChapter(
+  apiUrl: string,
+  token: string,
+  chapterId: number,
+  content: string
+): Promise<ReanalyzeResult> {
+  return request<ReanalyzeResult>(
+    apiUrl,
+    token,
+    `/api/chapters/${chapterId}/reanalyze`,
+    "POST",
+    { content }
+  );
 }
 
 export async function createChapter(

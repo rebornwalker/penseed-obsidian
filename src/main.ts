@@ -1,4 +1,4 @@
-import { Notice, Plugin, SuggestModal } from "obsidian";
+import { Notice, Plugin, SuggestModal, TFile } from "obsidian";
 import {
   PenseedSettings,
   PenseedSettingTab,
@@ -8,15 +8,11 @@ import {
   ApiError,
   listProjects,
   createChapter,
-  extractForeshadowing,
-  extractEntities,
-  listForeshadowings,
-  saveForeshadowing,
-  saveEntities,
-  analyzeChapterResolution,
+  listChapters,
+  reanalyzeChapter,
   PenseedProject,
 } from "./api";
-import { AnalysisResultModal } from "./ui";
+import { ReanalysisResultModal, ReplayItem } from "./ui";
 import { PenseedAuthManager } from "./auth";
 
 function extractChapterNumber(filename: string): number | null {
@@ -167,6 +163,8 @@ export default class PenseedPlugin extends Plugin {
     const notice = new Notice("Analyzing with Penseed...", 0);
 
     try {
+      // get_or_create the chapter, then recompute it in place. Reanalysis also
+      // covers first-time analysis (a fresh chapter has no prior data to diff).
       const chapter = await createChapter(
         apiUrl,
         token,
@@ -176,104 +174,96 @@ export default class PenseedPlugin extends Plugin {
         smartWordCount(content)
       );
 
-      const foreshadowing = await extractForeshadowing(
+      const result = await reanalyzeChapter(apiUrl, token, chapter.id, content);
+      notice.hide();
+
+      const affected = await this.buildReplayItems(
         apiUrl,
         token,
         projectId,
-        chapter.id,
-        content
+        result.affected_downstream_chapters
       );
 
-      // 按章节去重：先取该章已有伏笔，跳过重复的候选
-      const existing = await listForeshadowings(apiUrl, token, chapter.id, projectId);
-      const existingPreviews = new Set(
-        (existing.items ?? [])
-          .map((f) => (f.foreshadowing_text_preview ?? "").trim())
-          .filter((s) => s.length > 0)
-      );
-
-      let savedForeshadowing = 0;
-      let skippedForeshadowing = 0;
-      for (const c of foreshadowing.candidates) {
-        const preview = (c.foreshadowing_text_preview ?? c.text ?? "").trim();
-        if (!preview) continue;
-        if (existingPreviews.has(preview)) {
-          skippedForeshadowing++;
-          continue;
-        }
-        try {
-          await saveForeshadowing(apiUrl, token, {
-            project_id: projectId,
-            chapter_id: chapter.id,
-            foreshadowing_text_preview: preview,
-            confidence: c.confidence ?? 0,
-            start_position: c.start_position ?? -1,
-            end_position: c.end_position ?? -1,
-            is_foreshadowing: c.is_foreshadowing ?? true,
-            foreshadowing_type: c.foreshadowing_type ?? null,
-            target_elements: c.target_elements ?? null,
-            emotional_tone: c.emotional_tone ?? null,
-            narrative_function: c.narrative_function ?? null,
-            analysis: c.analysis ?? null,
-            improvement_suggestions: c.improvement_suggestions ?? null,
-          });
-          existingPreviews.add(preview);
-          savedForeshadowing++;
-        } catch (e) {
-          console.error("[Penseed] Failed to save foreshadowing candidate", e);
-        }
-      }
-
-      const entities = await extractEntities(apiUrl, token, projectId, content);
-      let savedEntities = 0;
-      if (entities.entities && entities.entities.length > 0) {
-        const res = await saveEntities(apiUrl, token, {
-          project_id: projectId,
-          chapter_id: chapter.id,
-          chapter_number: chapter.chapter_number ?? null,
-          entities: entities.entities,
-        });
-        savedEntities = res.saved_count ?? entities.entities.length;
-      }
-
-      // 伏笔回收分析：把结构化摘要写回章节（chapter_id 已传，后端自动落库）
-      let resolvedCount = 0;
-      try {
-        const resolution = await analyzeChapterResolution(
-          apiUrl,
-          token,
-          projectId,
-          chapter.id,
-          content
-        );
-        if (resolution.success) {
-          const resolvedForeshadowings =
-            resolution.data?.resolved_foreshadowings ?? [];
-          resolvedCount = resolvedForeshadowings.filter(
-            (item) => item.is_resolved === true
-          ).length;
-        } else {
-          console.warn(
-            "[Penseed] Resolution analysis returned failure",
-            resolution.error
-          );
-        }
-      } catch (e) {
-        console.error("[Penseed] Resolution analysis failed", e);
-      }
-
-      notice.hide();
-
-      new AnalysisResultModal(this.app, {
-        foreshadowingCount: savedForeshadowing,
-        foreshadowingSkipped: skippedForeshadowing,
-        entityCount: savedEntities,
-        resolvedCount,
+      new ReanalysisResultModal(this.app, {
+        entityCount: result.entity_count,
+        foreshadowingCount: result.foreshadowing_count,
+        addedForeshadowings: result.added_foreshadowings,
+        deletedForeshadowings: result.deleted_foreshadowings,
+        semanticChangedCount: result.semantic_changed_count,
+        estimatedReplayCredits: result.estimated_replay_credits,
         projectId,
+        affected,
       }).open();
     } catch (e) {
       notice.hide();
       this.notifyError(e);
+    }
+  }
+
+  private async buildReplayItems(
+    apiUrl: string,
+    token: string,
+    projectId: number,
+    affectedChapterIds: number[]
+  ): Promise<ReplayItem[]> {
+    if (affectedChapterIds.length === 0) return [];
+
+    // Map chapter id → chapter_number.
+    const numberById = new Map<number, number>();
+    try {
+      const chapters = await listChapters(apiUrl, token, projectId);
+      for (const c of chapters) {
+        if (typeof c.chapter_number === "number") {
+          numberById.set(c.id, c.chapter_number);
+        }
+      }
+    } catch (e) {
+      console.error("[Penseed] Failed to list chapters for replay mapping", e);
+    }
+
+    // Map chapter_number → note file (by leading number in filename).
+    const noteByNumber = new Map<number, TFile>();
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      const n = extractChapterNumber(f.basename);
+      if (n !== null) noteByNumber.set(n, f);
+    }
+
+    return affectedChapterIds.map((id) => {
+      const chapterNumber = numberById.get(id);
+      const note =
+        chapterNumber !== undefined ? noteByNumber.get(chapterNumber) : undefined;
+      return {
+        chapterNumber: chapterNumber ?? id,
+        noteTitle: note ? note.basename : null,
+        onReplay: () =>
+          this.replayChapterNote(apiUrl, token, projectId, note ?? null, id),
+      };
+    });
+  }
+
+  private async replayChapterNote(
+    apiUrl: string,
+    token: string,
+    projectId: number,
+    note: TFile | null,
+    chapterId: number
+  ): Promise<boolean> {
+    if (!note) return false;
+    try {
+      const content = await this.app.vault.read(note);
+      const chapter = await createChapter(
+        apiUrl,
+        token,
+        projectId,
+        note.basename,
+        extractChapterNumber(note.basename),
+        smartWordCount(content)
+      );
+      await reanalyzeChapter(apiUrl, token, chapter.id, content);
+      return true;
+    } catch (e) {
+      console.error("[Penseed] Failed to replay chapter", e);
+      return false;
     }
   }
 

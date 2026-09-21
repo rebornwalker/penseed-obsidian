@@ -1,7 +1,7 @@
 {
   "id": "penseed",
   "name": "Penseed",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "minAppVersion": "1.11.4",
   "description": "Never lose a plot thread. Analyze notes for foreshadowing, character, and world consistency, then track the full loop on Penseed.",
   "author": "Penseed",

@@ -1,19 +1,32 @@
 import { App, Modal } from "obsidian";
 
-export interface AnalysisSummary {
-  foreshadowingCount: number;
-  foreshadowingSkipped: number;
+export interface ReplayItem {
+  chapterNumber: number;
+  noteTitle: string | null;
+  onReplay: () => Promise<boolean>;
+}
+
+export interface ReanalysisSummary {
   entityCount: number;
-  resolvedCount?: number;
+  foreshadowingCount: number;
+  addedForeshadowings: number;
+  deletedForeshadowings: number;
+  semanticChangedCount: number;
+  estimatedReplayCredits: number;
   projectId: number;
+  affected: ReplayItem[];
 }
 
 const WEB_BASE_URL = "https://penseed.app";
 
-export class AnalysisResultModal extends Modal {
-  private summary: AnalysisSummary;
+function plural(n: number): string {
+  return n === 1 ? "" : "s";
+}
 
-  constructor(app: App, summary: AnalysisSummary) {
+export class ReanalysisResultModal extends Modal {
+  private summary: ReanalysisSummary;
+
+  constructor(app: App, summary: ReanalysisSummary) {
     super(app);
     this.summary = summary;
   }
@@ -23,53 +36,92 @@ export class AnalysisResultModal extends Modal {
     contentEl.empty();
     contentEl.addClass("penseed-result");
 
-    contentEl.createEl("h2", { text: "Penseed Analysis" });
+    contentEl.createEl("h2", { text: "Penseed Reanalysis" });
 
-    const skippedText =
-      this.summary.foreshadowingSkipped > 0
-        ? ` (skipped ${this.summary.foreshadowingSkipped} duplicate${
-            this.summary.foreshadowingSkipped === 1 ? "" : "s"
-          })`
-        : "";
     contentEl.createEl("div", {
-      text: `Saved ${this.summary.foreshadowingCount} foreshadowing ${
-        this.summary.foreshadowingCount === 1 ? "candidate" : "candidates"
-      }${skippedText}`,
-    });
-    contentEl.createEl("div", {
-      text: `Saved ${this.summary.entityCount} entity ${
-        this.summary.entityCount === 1 ? "candidate" : "candidates"
-      }`,
+      text: `${this.summary.entityCount} element${plural(
+        this.summary.entityCount
+      )}, ${this.summary.foreshadowingCount} foreshadowing${plural(
+        this.summary.foreshadowingCount
+      )}`,
     });
 
-    if (this.summary.resolvedCount !== undefined) {
+    if (
+      this.summary.addedForeshadowings > 0 ||
+      this.summary.deletedForeshadowings > 0
+    ) {
       contentEl.createEl("div", {
-        text: `Resolved ${this.summary.resolvedCount} foreshadowing${
-          this.summary.resolvedCount === 1 ? "" : "s"
-        }`,
+        text: `+${this.summary.addedForeshadowings} added / -${this.summary.deletedForeshadowings} removed`,
       });
     }
 
-    contentEl
-      .createEl("p", { text: "Open in Penseed to:" })
-      .addClass("penseed-cta-label");
+    if (this.summary.semanticChangedCount > 0) {
+      contentEl.createEl("div", {
+        text: `${this.summary.semanticChangedCount} foreshadowing${plural(
+          this.summary.semanticChangedCount
+        )} changed meaning`,
+      });
+    }
 
-    const list = contentEl.createEl("ul");
-    list.createEl("li", {
-      text: "Manage foreshadowing on a drag-and-drop board",
-    });
-    list.createEl("li", {
-      text: "Auto-detect character & plot conflicts across chapters",
-    });
-    list.createEl("li", {
-      text: "Track every thread from planted → developed → resolved",
-    });
+    if (this.summary.affected.length > 0) {
+      contentEl
+        .createEl("div", {
+          text: `${this.summary.affected.length} downstream chapter${plural(
+            this.summary.affected.length
+          )} affected — re-analyze them to refresh`,
+        })
+        .addClass("penseed-cta-label");
+
+      if (this.summary.estimatedReplayCredits > 0) {
+        contentEl.createEl("div", {
+          text: `Estimated ${this.summary.estimatedReplayCredits} credits to re-analyze all downstream chapters.`,
+        });
+      }
+
+      const list = contentEl.createEl("ul");
+      for (const item of this.summary.affected) {
+        this.renderReplayRow(list, item);
+      }
+    }
 
     const button = contentEl.createEl("button", { text: "Open Penseed" });
     button.addClass("penseed-open-button");
     button.addEventListener("click", () => {
       window.open(`${WEB_BASE_URL}/projects/${this.summary.projectId}`, "_blank");
       this.close();
+    });
+  }
+
+  private renderReplayRow(list: HTMLElement, item: ReplayItem): void {
+    const li = list.createEl("li");
+    li.addClass("penseed-replay-row");
+
+    const label = item.noteTitle
+      ? `Chapter ${item.chapterNumber} — ${item.noteTitle}`
+      : `Chapter ${item.chapterNumber} — note not found`;
+    li.createEl("span", { text: label });
+
+    const replayBtn = li.createEl("button", { text: "Re-analyze now" });
+    replayBtn.addClass("penseed-replay-button");
+    replayBtn.disabled = item.noteTitle === null;
+
+    const ignoreBtn = li.createEl("button", { text: "Ignore" });
+    ignoreBtn.addClass("penseed-ignore-button");
+
+    replayBtn.addEventListener("click", async () => {
+      replayBtn.disabled = true;
+      replayBtn.textContent = "Re-analyzing...";
+      try {
+        const ok = await item.onReplay();
+        replayBtn.textContent = ok ? "Done" : "Failed";
+        ignoreBtn.remove();
+      } catch {
+        replayBtn.textContent = "Failed";
+      }
+    });
+
+    ignoreBtn.addEventListener("click", () => {
+      li.remove();
     });
   }
 

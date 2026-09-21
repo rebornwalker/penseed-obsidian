@@ -19,3 +19,30 @@
   padding: 0.5em;
   cursor: pointer;
 }
+
+.penseed-result .penseed-replay-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin-bottom: 0.4em;
+}
+
+.penseed-result .penseed-replay-row span {
+  flex: 1;
+}
+
+.penseed-result .penseed-replay-button,
+.penseed-result .penseed-ignore-button {
+  padding: 0.25em 0.6em;
+  cursor: pointer;
+}
+
+.penseed-result .penseed-replay-button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.penseed-result .penseed-ignore-button {
+  background: transparent;
+  border: 1px solid var(--background-modifier-border);
+}
