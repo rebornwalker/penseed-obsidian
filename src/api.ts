@@ -97,13 +97,13 @@ export interface EntityExtractResult {
   processing_time: number;
 }
 
-async function request<T>(
+async function requestRaw(
   apiUrl: string,
   token: string,
   path: string,
   method: "GET" | "POST",
   body?: unknown
-): Promise<T> {
+): Promise<{ status: number; json: unknown }> {
   const url = `${apiUrl.replace(/\/+$/, "")}${path}`;
 
   let response: RequestUrlResponse;
@@ -152,10 +152,21 @@ async function request<T>(
   }
 
   try {
-    return response.json as T;
+    return { status, json: response.json };
   } catch {
     throw new ApiError("Penseed analysis failed.");
   }
+}
+
+async function request<T>(
+  apiUrl: string,
+  token: string,
+  path: string,
+  method: "GET" | "POST",
+  body?: unknown
+): Promise<T> {
+  const { json } = await requestRaw(apiUrl, token, path, method, body);
+  return json as T;
 }
 
 export async function listProjects(
@@ -210,13 +221,16 @@ export async function createChapter(
   title: string,
   chapterNumber: number | null,
   wordCount: number
-): Promise<PenseedChapter> {
-  return request<PenseedChapter>(apiUrl, token, "/api/chapters/", "POST", {
+): Promise<{ chapter: PenseedChapter; isNew: boolean }> {
+  // get_or_create returns 201 for a newly created chapter, 200 for an existing
+  // one. The status distinguishes first-time analysis from in-place reanalysis.
+  const { status, json } = await requestRaw(apiUrl, token, "/api/chapters/", "POST", {
     title,
     chapter_number: chapterNumber,
     project_id: projectId,
     word_count: wordCount,
   });
+  return { chapter: json as PenseedChapter, isNew: status === 201 };
 }
 
 /**

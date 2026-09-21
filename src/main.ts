@@ -163,9 +163,10 @@ export default class PenseedPlugin extends Plugin {
     const notice = new Notice("Analyzing with Penseed...", 0);
 
     try {
-      // get_or_create the chapter, then recompute it in place. Reanalysis also
-      // covers first-time analysis (a fresh chapter has no prior data to diff).
-      const chapter = await createChapter(
+      // get_or_create the chapter, then recompute it in place. Reanalysis is
+      // idempotent: a fresh chapter has no prior data to diff, so it behaves as
+      // first-time analysis. The `isNew` flag (201 vs 200) drives the modal copy.
+      const { chapter, isNew } = await createChapter(
         apiUrl,
         token,
         projectId,
@@ -193,6 +194,7 @@ export default class PenseedPlugin extends Plugin {
         estimatedReplayCredits: result.estimated_replay_credits,
         projectId,
         affected,
+        isFirstAnalysis: isNew,
       }).open();
     } catch (e) {
       notice.hide();
@@ -251,7 +253,7 @@ export default class PenseedPlugin extends Plugin {
     if (!note) return false;
     try {
       const content = await this.app.vault.read(note);
-      const chapter = await createChapter(
+      const { chapter } = await createChapter(
         apiUrl,
         token,
         projectId,

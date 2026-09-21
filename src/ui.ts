@@ -15,6 +15,7 @@ export interface ReanalysisSummary {
   estimatedReplayCredits: number;
   projectId: number;
   affected: ReplayItem[];
+  isFirstAnalysis: boolean;
 }
 
 const WEB_BASE_URL = "https://penseed.app";
@@ -36,7 +37,11 @@ export class ReanalysisResultModal extends Modal {
     contentEl.empty();
     contentEl.addClass("penseed-result");
 
-    contentEl.createEl("h2", { text: "Penseed Reanalysis" });
+    contentEl.createEl("h2", {
+      text: this.summary.isFirstAnalysis
+        ? "Penseed Analysis"
+        : "Penseed Reanalysis",
+    });
 
     contentEl.createEl("div", {
       text: `${this.summary.entityCount} element${plural(
@@ -47,8 +52,9 @@ export class ReanalysisResultModal extends Modal {
     });
 
     if (
-      this.summary.addedForeshadowings > 0 ||
-      this.summary.deletedForeshadowings > 0
+      !this.summary.isFirstAnalysis &&
+      (this.summary.addedForeshadowings > 0 ||
+        this.summary.deletedForeshadowings > 0)
     ) {
       contentEl.createEl("div", {
         text: `+${this.summary.addedForeshadowings} added / -${this.summary.deletedForeshadowings} removed`,
