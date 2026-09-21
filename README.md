@@ -64,13 +64,6 @@ Privacy policy: https://penseed.app/privacy
 4. Switch back to Obsidian. You're connected. There's no token to copy, and your
    session renews automatically, so you won't be signed out.
 
-## Development
-
-```bash
-npm install
-npm run build   # type-check + produce main.js
-```
-
 ## License
 
 MIT. See LICENSE.
