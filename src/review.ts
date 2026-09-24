@@ -60,6 +60,7 @@ export class AnalysisReviewModal extends Modal {
   private selectedResolved = new Set<number>();
   private saving = false;
   private tooltipEl: HTMLElement | null = null;
+  private resizeCleanup: (() => void) | null = null;
 
   constructor(app: App, data: AnalysisReviewData) {
     super(app);
@@ -72,13 +73,58 @@ export class AnalysisReviewModal extends Modal {
   onOpen(): void {
     this.modalEl.addClass("penseed-review-modal");
     this.render();
+    this.installResizeHandle();
   }
 
   onClose(): void {
+    this.resizeCleanup?.();
+    this.resizeCleanup = null;
     this.hideTooltip();
     this.tooltipEl?.remove();
     this.tooltipEl = null;
     this.contentEl.empty();
+  }
+
+  private installResizeHandle(): void {
+    const modal = this.modalEl;
+    const handle = modal.createDiv({ cls: "penseed-resize-handle" });
+
+    let startX = 0;
+    let startY = 0;
+    let startWidth = 0;
+    let startHeight = 0;
+
+    const onMove = (ev: MouseEvent): void => {
+      const width = Math.min(
+        window.innerWidth - 16,
+        Math.max(360, startWidth + (ev.clientX - startX))
+      );
+      const height = Math.min(
+        window.innerHeight - 16,
+        Math.max(280, startHeight + (ev.clientY - startY))
+      );
+      modal.style.width = `${width}px`;
+      modal.style.height = `${height}px`;
+    };
+
+    const stop = (): void => {
+      document.body.classList.remove("penseed-resizing");
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", stop);
+    };
+    this.resizeCleanup = stop;
+
+    handle.addEventListener("mousedown", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      startX = ev.clientX;
+      startY = ev.clientY;
+      startWidth = modal.offsetWidth;
+      startHeight = modal.offsetHeight;
+      document.body.classList.add("penseed-resizing");
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", stop);
+    });
   }
 
   private render(): void {
@@ -93,14 +139,16 @@ export class AnalysisReviewModal extends Modal {
       this.renderSummary(contentEl, this.data.summary);
     }
 
+    const body = contentEl.createDiv({ cls: "penseed-review-body" });
+
     if (this.data.candidates.length > 0) {
-      this.renderCandidates(contentEl);
+      this.renderCandidates(body);
     }
     if (this.data.entities.length > 0) {
-      this.renderEntities(contentEl);
+      this.renderEntities(body);
     }
     if (this.data.resolvedItems.length > 0) {
-      this.renderResolved(contentEl);
+      this.renderResolved(body);
     }
 
     if (
@@ -108,7 +156,7 @@ export class AnalysisReviewModal extends Modal {
       this.data.entities.length === 0 &&
       this.data.resolvedItems.length === 0
     ) {
-      contentEl.createDiv({
+      body.createDiv({
         cls: "penseed-review-empty",
         text: "No foreshadowing or elements found in this chapter.",
       });
@@ -128,18 +176,19 @@ export class AnalysisReviewModal extends Modal {
       text: "Chapter Analysis Summary",
     });
 
-    const parts: Array<[string, string[] | undefined]> = [
-      ["Revelations", summary.revelations],
-      ["Resolutions", summary.resolutions],
-      ["Plot Advances", summary.plot_advances],
-      ["Key Elements", summary.key_entities],
+    const parts: Array<[string, string[] | undefined, boolean]> = [
+      ["Revelations", summary.revelations, false],
+      ["Resolutions", summary.resolutions, false],
+      ["Plot Advances", summary.plot_advances, false],
+      ["Key Elements", summary.key_entities, true],
     ];
 
-    for (const [label, items] of parts) {
+    for (const [label, items, horizontal] of parts) {
       if (!items || items.length === 0) continue;
       const details = box.createEl("details", { cls: "penseed-review-details" });
       details.createEl("summary", { text: `${label} (${items.length})` });
       const ul = details.createEl("ul");
+      if (horizontal) ul.addClass("penseed-review-summary-tags");
       for (const item of items) {
         ul.createEl("li", { text: item });
       }
@@ -229,7 +278,9 @@ export class AnalysisReviewModal extends Modal {
       }
     );
 
-    const list = section.createDiv({ cls: "penseed-review-list" });
+    const list = section.createDiv({
+      cls: "penseed-review-list penseed-review-list-horizontal",
+    });
     this.data.entities.forEach((entity, index) => {
       this.renderRow(list, {
         checked: this.selectedEntities.has(index),

@@ -251,23 +251,43 @@
 /* ---- Analysis review modal (Phase 0.14) ---- */
 
 .penseed-review-modal {
-  width: min(680px, 90vw);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 92vw);
+  height: 80vh;
+  max-width: none;
+  max-height: none;
+  overflow: hidden;
 }
 
 .penseed-review {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0.9em;
-  max-height: 80vh;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 0.25em;
 }
 
 .penseed-review h2 {
   margin: 0;
+  flex-shrink: 0;
+}
+
+.penseed-review-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9em;
+  padding-right: 0.25em;
 }
 
 .penseed-review-summary {
+  flex-shrink: 0;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   padding: 0.6em 0.8em;
@@ -292,7 +312,26 @@
   margin: 0.3em 0 0.3em 1.2em;
 }
 
+.penseed-review-details ul.penseed-review-summary-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+  list-style: none;
+  margin: 0.4em 0 0;
+  padding: 0;
+}
+
+.penseed-review-details ul.penseed-review-summary-tags li {
+  padding: 0.1em 0.5em;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
 .penseed-review-section {
+  flex-shrink: 0;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   overflow: hidden;
@@ -385,6 +424,34 @@
   white-space: nowrap;
 }
 
+.penseed-review-list-horizontal {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.4em;
+}
+
+.penseed-review-list-horizontal .penseed-review-row {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35em;
+  padding: 0.25em 0.55em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+}
+
+.penseed-review-list-horizontal .penseed-review-row input[type="checkbox"] {
+  margin-top: 0;
+}
+
+.penseed-review-list-horizontal .penseed-review-row-body {
+  align-items: center;
+}
+
+.penseed-review-list-horizontal .penseed-review-row-text {
+  flex: 0 0 auto;
+  font-size: 0.85em;
+}
+
 .penseed-review-empty {
   color: var(--text-muted);
   text-align: center;
@@ -392,12 +459,13 @@
 }
 
 .penseed-review-footer {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5em;
   border-top: 1px solid var(--background-modifier-border);
-  padding-top: 0.6em;
+  padding: 0.6em 1.1em 0.75em 0;
 }
 
 .penseed-review-footer-summary {
@@ -408,4 +476,33 @@
 .penseed-review-footer-actions {
   display: flex;
   gap: 0.5em;
+}
+
+/* ---- Analysis review modal: corner resize (Phase 0.14) ---- */
+
+.penseed-resize-handle {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  z-index: 10;
+}
+
+.penseed-resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  border-bottom-right-radius: 2px;
+}
+
+body.penseed-resizing {
+  cursor: nwse-resize;
+  user-select: none;
 }
