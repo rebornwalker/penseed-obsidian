@@ -10,9 +10,21 @@ import {
   createChapter,
   listChapters,
   reanalyzeChapter,
+  extractForeshadowing,
+  extractEntities,
+  saveForeshadowing,
+  saveEntities,
+  analyzeChapterResolution,
+  updateForeshadowingStatus,
   PenseedProject,
 } from "./api";
 import { ReanalysisResultModal, ReplayItem } from "./ui";
+import {
+  AnalysisReviewModal,
+  ReviewResolvedItem,
+  ReviewChapterSummary,
+  ReviewSelection,
+} from "./review";
 import { PenseedAuthManager } from "./auth";
 import {
   ForeshadowingBoardView,
@@ -33,6 +45,10 @@ function smartWordCount(text: string): number {
     return trimmed.replace(/\s/g, "").length;
   }
   return trimmed.split(/\s+/).length;
+}
+
+function toStringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.map((v) => String(v)) : undefined;
 }
 
 class ProjectSuggestModal extends SuggestModal<PenseedProject> {
@@ -199,9 +215,9 @@ export default class PenseedPlugin extends Plugin {
     const notice = new Notice("Analyzing with Penseed...", 0);
 
     try {
-      // get_or_create the chapter, then recompute it in place. Reanalysis is
-      // idempotent: a fresh chapter has no prior data to diff, so it behaves as
-      // first-time analysis. The `isNew` flag (201 vs 200) drives the modal copy.
+      // get_or_create the chapter by chapter_number. `isNew` (201 vs 200) is the
+      // branch point: a brand-new chapter goes through extract → review → save,
+      // while an existing chapter (edited historical text) re-runs in place.
       const { chapter, isNew } = await createChapter(
         apiUrl,
         token,
@@ -211,31 +227,204 @@ export default class PenseedPlugin extends Plugin {
         smartWordCount(content)
       );
 
-      const result = await reanalyzeChapter(apiUrl, token, chapter.id, content);
+      if (!isNew) {
+        // Historical chapter: recompute in place, auto-commit, flag downstream.
+        const result = await reanalyzeChapter(apiUrl, token, chapter.id, content);
+        notice.hide();
+
+        const affected = await this.buildReplayItems(
+          apiUrl,
+          token,
+          projectId,
+          result.affected_downstream_chapters
+        );
+
+        new ReanalysisResultModal(this.app, {
+          entityCount: result.entity_count,
+          foreshadowingCount: result.foreshadowing_count,
+          addedForeshadowings: result.added_foreshadowings,
+          deletedForeshadowings: result.deleted_foreshadowings,
+          semanticChangedCount: result.semantic_changed_count,
+          resolvedCount: result.foreshadowings_resolved,
+          estimatedReplayCredits: result.estimated_replay_credits,
+          projectId,
+          affected,
+          isFirstAnalysis: false,
+        }).open();
+        return;
+      }
+
+      // New chapter: extract candidates and entities without committing, run
+      // resolution analysis, then let the author pick what to keep.
+      const chapterNumber =
+        chapter.chapter_number ?? extractChapterNumber(file.basename);
+
+      const [foreshadowingResult, entityResult, resolutionResult] =
+        await Promise.allSettled([
+          extractForeshadowing(apiUrl, token, projectId, chapter.id, content),
+          extractEntities(apiUrl, token, projectId, content),
+          analyzeChapterResolution(apiUrl, token, projectId, chapter.id, content),
+        ]);
       notice.hide();
 
-      const affected = await this.buildReplayItems(
-        apiUrl,
-        token,
-        projectId,
-        result.affected_downstream_chapters
-      );
+      const candidates =
+        foreshadowingResult.status === "fulfilled"
+          ? foreshadowingResult.value.candidates ?? []
+          : [];
+      const entities =
+        entityResult.status === "fulfilled"
+          ? (entityResult.value.entities ?? []).map((e) => ({
+              name: e.name,
+              type: e.type,
+            }))
+          : [];
+      const resolution =
+        resolutionResult.status === "fulfilled" && resolutionResult.value.success
+          ? resolutionResult.value.data
+          : undefined;
 
-      new ReanalysisResultModal(this.app, {
-        entityCount: result.entity_count,
-        foreshadowingCount: result.foreshadowing_count,
-        addedForeshadowings: result.added_foreshadowings,
-        deletedForeshadowings: result.deleted_foreshadowings,
-        semanticChangedCount: result.semantic_changed_count,
-        resolvedCount: result.foreshadowings_resolved,
-        estimatedReplayCredits: result.estimated_replay_credits,
+      const resolvedItems: ReviewResolvedItem[] = [];
+      for (const raw of resolution?.resolved_foreshadowings ?? []) {
+        const item = raw as {
+          is_resolved?: boolean;
+          confidence?: number;
+          resolution_type?: string;
+          evidence?: string;
+          foreshadowing?: {
+            id?: number;
+            foreshadowing_text_preview?: string;
+            title?: string;
+          };
+        };
+        if (item.is_resolved !== true) continue;
+        if (typeof item.foreshadowing?.id !== "number") continue;
+        resolvedItems.push({
+          id: item.foreshadowing.id,
+          text:
+            item.foreshadowing.foreshadowing_text_preview ??
+            item.foreshadowing.title ??
+            "",
+          confidence: typeof item.confidence === "number" ? item.confidence : null,
+          resolutionType: item.resolution_type ?? null,
+          evidence: item.evidence ?? null,
+        });
+      }
+
+      const chapterSummary = resolution?.chapter_summary;
+      const summary: ReviewChapterSummary | null = chapterSummary
+        ? {
+            revelations: toStringArray(
+              (chapterSummary as Record<string, unknown>).revelations
+            ),
+            resolutions: toStringArray(
+              (chapterSummary as Record<string, unknown>).resolutions
+            ),
+            plot_advances: toStringArray(
+              (chapterSummary as Record<string, unknown>).plot_advances
+            ),
+            key_entities: toStringArray(
+              (chapterSummary as Record<string, unknown>).key_entities
+            ),
+          }
+        : null;
+
+      new AnalysisReviewModal(this.app, {
         projectId,
-        affected,
-        isFirstAnalysis: isNew,
+        chapterId: chapter.id,
+        chapterNumber,
+        candidates,
+        entities,
+        resolvedItems,
+        summary,
+        onSave: (selection) =>
+          this.saveReviewSelections(
+            apiUrl,
+            token,
+            projectId,
+            chapter.id,
+            chapterNumber,
+            selection
+          ),
       }).open();
     } catch (e) {
       notice.hide();
       this.notifyError(e);
+    }
+  }
+
+  private async saveReviewSelections(
+    apiUrl: string,
+    token: string,
+    projectId: number,
+    chapterId: number,
+    chapterNumber: number | null,
+    selection: ReviewSelection
+  ): Promise<void> {
+    let saved = 0;
+    let failed = 0;
+
+    for (const candidate of selection.candidates) {
+      const text = candidate.foreshadowing_text_preview ?? candidate.text ?? "";
+      if (!text.trim()) continue;
+      try {
+        await saveForeshadowing(apiUrl, token, {
+          project_id: projectId,
+          chapter_id: chapterId,
+          foreshadowing_text_preview: text,
+          confidence:
+            typeof candidate.confidence === "number" ? candidate.confidence : 0.5,
+          start_position:
+            typeof candidate.start_position === "number"
+              ? candidate.start_position
+              : -1,
+          end_position:
+            typeof candidate.end_position === "number"
+              ? candidate.end_position
+              : -1,
+          is_foreshadowing: candidate.is_foreshadowing ?? true,
+          foreshadowing_type: candidate.foreshadowing_type ?? undefined,
+          target_elements: candidate.target_elements ?? undefined,
+          emotional_tone: candidate.emotional_tone ?? undefined,
+          narrative_function: candidate.narrative_function ?? undefined,
+          analysis: candidate.analysis ?? undefined,
+          improvement_suggestions: candidate.improvement_suggestions ?? undefined,
+        });
+        saved++;
+      } catch (e) {
+        failed++;
+        console.error("[Penseed] Failed to save foreshadowing", e);
+      }
+    }
+
+    if (selection.entities.length > 0) {
+      try {
+        await saveEntities(apiUrl, token, {
+          project_id: projectId,
+          chapter_id: chapterId,
+          chapter_number: chapterNumber,
+          entities: selection.entities.map((e) => ({
+            name: e.name,
+            type: e.type,
+          })),
+        });
+      } catch (e) {
+        console.error("[Penseed] Failed to save entities", e);
+        new Notice("Failed to save elements.");
+      }
+    }
+
+    for (const id of selection.resolvedIds) {
+      try {
+        await updateForeshadowingStatus(apiUrl, token, id, "resolved");
+      } catch (e) {
+        console.error("[Penseed] Failed to mark foreshadowing resolved", e);
+      }
+    }
+
+    if (failed > 0) {
+      new Notice(`Saved ${saved} foreshadowing, ${failed} failed.`);
+    } else {
+      new Notice(saved > 0 ? `Saved ${saved} foreshadowing.` : "Saved.");
     }
   }
 
