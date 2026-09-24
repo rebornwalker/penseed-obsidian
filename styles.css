@@ -231,3 +231,19 @@
 .penseed-board-empty .mod-cta {
   margin-top: 0.25em;
 }
+
+.penseed-card-tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 320px;
+  padding: 0.6em 0.8em;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  font-size: 0.85em;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  visibility: hidden;
+}

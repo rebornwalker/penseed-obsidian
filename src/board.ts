@@ -40,6 +40,7 @@ export class ForeshadowingBoardView extends ItemView {
   private items: ForeshadowingItem[] = [];
   private projectId: number | null = null;
   private boardEl: HTMLElement | null = null;
+  private tooltipEl: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, plugin: PenseedPlugin) {
     super(leaf);
@@ -64,6 +65,9 @@ export class ForeshadowingBoardView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    this.hideTooltip();
+    this.tooltipEl?.remove();
+    this.tooltipEl = null;
     this.contentEl.empty();
   }
 
@@ -224,6 +228,50 @@ export class ForeshadowingBoardView extends ItemView {
     card.addEventListener("dragend", () => {
       card.removeClass("penseed-card-dragging");
     });
+    card.addEventListener("mouseenter", () => {
+      this.showTooltip(item, card);
+    });
+    card.addEventListener("mouseleave", () => {
+      this.hideTooltip();
+    });
+  }
+
+  private showTooltip(item: ForeshadowingItem, card: HTMLElement): void {
+    const text = item.foreshadowing_text_preview;
+    // Only surface a tooltip when the card actually truncates the text.
+    if (!text || text.length <= 80) return;
+
+    if (!this.tooltipEl) {
+      this.tooltipEl = document.body.createDiv({ cls: "penseed-card-tooltip" });
+    }
+    const tooltip = this.tooltipEl;
+    tooltip.textContent = text;
+    tooltip.style.visibility = "hidden";
+    tooltip.style.left = "0px";
+    tooltip.style.top = "0px";
+    if (!tooltip.isConnected) document.body.appendChild(tooltip);
+
+    const rect = card.getBoundingClientRect();
+    const tipRect = tooltip.getBoundingClientRect();
+
+    // Right-align the tooltip to the card's right edge, expanding leftwards so
+    // it never overflows the right edge of the viewport.
+    let left = rect.right - tipRect.width;
+    left = Math.max(8, left);
+
+    // Keep the tooltip's top from rising above the card (avoids the header),
+    // but pull it back up if it would overflow the bottom of the viewport.
+    let top = rect.top;
+    top = Math.min(top, window.innerHeight - tipRect.height - 8);
+    top = Math.max(8, top);
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+    tooltip.style.visibility = "visible";
+  }
+
+  private hideTooltip(): void {
+    if (this.tooltipEl) this.tooltipEl.style.visibility = "hidden";
   }
 
   private async handleDrop(id: number, newStatus: string): Promise<void> {
