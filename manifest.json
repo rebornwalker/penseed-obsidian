@@ -1,9 +1,9 @@
 {
   "id": "penseed",
   "name": "Penseed",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "minAppVersion": "1.11.4",
-  "description": "Never lose a plot thread. Analyze notes for foreshadowing, character, and world consistency, then track the full loop on Penseed.",
+  "description": "Foreshadowing and story consistency tracker for novelists and fiction writers. Analyze notes for plot threads, characters, and world rules during novel writing, then track every clue to its payoff.",
   "author": "Penseed",
   "authorUrl": "https://penseed.app",
   "isDesktopOnly": false

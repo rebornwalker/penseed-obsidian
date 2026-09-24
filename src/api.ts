@@ -102,7 +102,7 @@ async function requestRaw(
   apiUrl: string,
   token: string,
   path: string,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PUT",
   body?: unknown
 ): Promise<{ status: number; json: unknown }> {
   const url = `${apiUrl.replace(/\/+$/, "")}${path}`;
@@ -163,7 +163,7 @@ async function request<T>(
   apiUrl: string,
   token: string,
   path: string,
-  method: "GET" | "POST",
+  method: "GET" | "POST" | "PUT",
   body?: unknown
 ): Promise<T> {
   const { json } = await requestRaw(apiUrl, token, path, method, body);
@@ -296,6 +296,61 @@ export async function saveForeshadowing(
   payload: ForeshadowingSavePayload
 ): Promise<unknown> {
   return request<unknown>(apiUrl, token, "/api/foreshadowing/", "POST", payload);
+}
+
+export interface ForeshadowingItem {
+  id: number;
+  status: string | null;
+  foreshadowing_text_preview: string | null;
+  priority: number | null;
+  chapter_title?: string | null;
+  [key: string]: unknown;
+}
+
+export interface ForeshadowingListByProjectResult {
+  items: ForeshadowingItem[];
+  stats?: Record<string, unknown>;
+  pagination?: Record<string, unknown>;
+}
+
+/**
+ * Phase 0.13: list every foreshadowing in a project (no chapter filter) for the
+ * plugin-side kanban board. Mirrors the web board's `GET /api/foreshadowing/?project_id=`.
+ */
+export async function listForeshadowingsByProject(
+  apiUrl: string,
+  token: string,
+  projectId: number
+): Promise<ForeshadowingListByProjectResult> {
+  const params = new URLSearchParams();
+  params.set("project_id", String(projectId));
+  params.set("limit", "1000");
+  return request<ForeshadowingListByProjectResult>(
+    apiUrl,
+    token,
+    `/api/foreshadowing/?${params.toString()}`,
+    "GET"
+  );
+}
+
+/**
+ * Phase 0.13: move a foreshadowing between kanban columns. The backend treats
+ * this exactly like the web board's drag-and-drop, so both ends share one
+ * source of truth (the `status` field) and stay in sync automatically.
+ */
+export async function updateForeshadowingStatus(
+  apiUrl: string,
+  token: string,
+  id: number,
+  status: string
+): Promise<unknown> {
+  return request<unknown>(
+    apiUrl,
+    token,
+    `/api/foreshadowing/${id}`,
+    "PUT",
+    { status }
+  );
 }
 
 export async function saveEntities(

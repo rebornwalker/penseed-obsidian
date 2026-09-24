@@ -14,6 +14,10 @@ import {
 } from "./api";
 import { ReanalysisResultModal, ReplayItem } from "./ui";
 import { PenseedAuthManager } from "./auth";
+import {
+  ForeshadowingBoardView,
+  VIEW_TYPE_FORESHADOWING_BOARD,
+} from "./board";
 
 function extractChapterNumber(filename: string): number | null {
   const match = filename.match(/\d+/);
@@ -94,11 +98,43 @@ export default class PenseedPlugin extends Plugin {
       this.analyzeCurrentNote();
     });
 
+    this.registerView(
+      VIEW_TYPE_FORESHADOWING_BOARD,
+      (leaf) => new ForeshadowingBoardView(leaf, this)
+    );
+
+    this.addRibbonIcon("layout-grid", "Open foreshadowing board", () => {
+      this.activateBoardView();
+    });
+
     this.addCommand({
       id: "analyze-current-note",
       name: "Analyze Current Note",
       callback: () => this.analyzeCurrentNote(),
     });
+
+    this.addCommand({
+      id: "open-foreshadowing-board",
+      name: "Open Foreshadowing Board",
+      callback: () => this.activateBoardView(),
+    });
+  }
+
+  async activateBoardView(): Promise<void> {
+    const { workspace } = this.app;
+    const existing = workspace.getLeavesOfType(VIEW_TYPE_FORESHADOWING_BOARD)[0];
+    if (existing) {
+      workspace.revealLeaf(existing);
+      const view = existing.view;
+      if (view instanceof ForeshadowingBoardView) view.refresh();
+      return;
+    }
+    const leaf = workspace.getRightLeaf(false) ?? workspace.getLeaf(true);
+    await leaf.setViewState({
+      type: VIEW_TYPE_FORESHADOWING_BOARD,
+      active: true,
+    });
+    workspace.revealLeaf(leaf);
   }
 
   async loadSettings(): Promise<void> {
