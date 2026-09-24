@@ -43,7 +43,13 @@ chapter 500 never means re-reading chapters 1 through 499.
 
 Run **Penseed: Analyze Current Note** from the command palette. Penseed will bind
 the note to a project, analyze it, and show how many new threads and characters
-it found — then point you to the full foreshadowing board in the web app.
+it found.
+
+Click the **layout-grid icon** in the left ribbon — or run **Penseed: Open
+Foreshadowing Board** — to open a four-column board (Pending / In Progress /
+Resolved / Cancelled). Drag a clue between columns to update its status, kept in
+sync with the web app. For the full board with relations and editing, open the
+web app.
 
 ## Privacy
 
