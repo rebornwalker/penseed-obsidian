@@ -31,9 +31,50 @@ import {
   VIEW_TYPE_FORESHADOWING_BOARD,
 } from "./board";
 
+const CN_DIGITS: Record<string, number> = {
+  "零": 0, "〇": 0,
+  "一": 1, "二": 2, "两": 2, "三": 3, "四": 4,
+  "五": 5, "六": 6, "七": 7, "八": 8, "九": 9,
+};
+
+const CN_UNITS: Record<string, number> = {
+  "十": 10, "百": 100, "千": 1000, "万": 10000,
+};
+
+function chineseToNumber(text: string): number | null {
+  let total = 0;
+  let section = 0;
+  let number = 0;
+  for (const ch of text) {
+    if (ch in CN_DIGITS) {
+      number = CN_DIGITS[ch];
+    } else if (ch in CN_UNITS) {
+      const unit = CN_UNITS[ch];
+      if (unit === 10000) {
+        section = (section + number) * unit;
+        total += section;
+        section = 0;
+      } else {
+        section += (number === 0 ? 1 : number) * unit;
+      }
+      number = 0;
+    } else {
+      return null;
+    }
+  }
+  return total + section + number;
+}
+
 function extractChapterNumber(filename: string): number | null {
-  const match = filename.match(/\d+/);
-  return match ? parseInt(match[0], 10) : null;
+  const arabic = filename.match(/\d+/);
+  if (arabic) return parseInt(arabic[0], 10);
+
+  const chinese = filename.match(/第([零〇一二两三四五六七八九十百千万]+)[章回节卷部]/);
+  if (chinese) {
+    const value = chineseToNumber(chinese[1]);
+    if (value !== null) return value;
+  }
+  return null;
 }
 
 function smartWordCount(text: string): number {
