@@ -1,6 +1,6 @@
 {
   "name": "penseed-obsidian-plugin",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "description": "Penseed Obsidian plugin — analyze a note for foreshadowing and entity consistency, then continue on Penseed.",
   "main": "main.js",
   "scripts": {

@@ -265,7 +265,8 @@ export default class PenseedPlugin extends Plugin {
         projectId,
         file.basename,
         extractChapterNumber(file.basename),
-        smartWordCount(content)
+        smartWordCount(content),
+        content
       );
 
       if (!isNew) {
@@ -524,7 +525,8 @@ export default class PenseedPlugin extends Plugin {
         projectId,
         note.basename,
         extractChapterNumber(note.basename),
-        smartWordCount(content)
+        smartWordCount(content),
+        content
       );
       await reanalyzeChapter(apiUrl, token, chapter.id, content);
       return true;

@@ -230,15 +230,19 @@ export async function createChapter(
   projectId: number,
   title: string,
   chapterNumber: number | null,
-  wordCount: number
+  wordCount: number,
+  content: string
 ): Promise<{ chapter: PenseedChapter; isNew: boolean }> {
   // get_or_create returns 201 for a newly created chapter, 200 for an existing
   // one. The status distinguishes first-time analysis from in-place reanalysis.
+  // `content` is passed through so the backend can persist the original text
+  // (content retention), which the web reanalyze modal later reads back.
   const { status, json } = await requestRaw(apiUrl, token, "/api/chapters/", "POST", {
     title,
     chapter_number: chapterNumber,
     project_id: projectId,
     word_count: wordCount,
+    content,
   });
   return { chapter: json as PenseedChapter, isNew: status === 201 };
 }
