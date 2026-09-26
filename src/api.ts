@@ -79,11 +79,20 @@ export interface ForeshadowingSavePayload {
   improvement_suggestions?: string[] | null;
 }
 
+export interface EntityItem {
+  name: string;
+  type?: string;
+  aliases?: string[];
+  attributes?: Record<string, unknown>;
+  description?: string;
+  [key: string]: unknown;
+}
+
 export interface EntitySavePayload {
   project_id: number;
   chapter_id: number;
   chapter_number: number | null;
-  entities: Array<{ name: string; type?: string; [key: string]: unknown }>;
+  entities: EntityItem[];
 }
 
 export interface ForeshadowingExtractResult {
@@ -93,7 +102,7 @@ export interface ForeshadowingExtractResult {
 }
 
 export interface EntityExtractResult {
-  entities: Array<{ name: string; type: string; [key: string]: unknown }>;
+  entities: EntityItem[];
   entity_count: number;
   processing_time: number;
 }

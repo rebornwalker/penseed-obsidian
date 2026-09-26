@@ -276,6 +276,9 @@ export default class PenseedPlugin extends Plugin {
           ? (entityResult.value.entities ?? []).map((e) => ({
               name: e.name,
               type: e.type,
+              aliases: e.aliases,
+              attributes: e.attributes,
+              description: e.description,
             }))
           : [];
       const resolution =
@@ -397,6 +400,9 @@ export default class PenseedPlugin extends Plugin {
           entities: selection.entities.map((e) => ({
             name: e.name,
             type: e.type,
+            aliases: e.aliases,
+            attributes: e.attributes,
+            description: e.description,
           })),
         });
       } catch (e) {

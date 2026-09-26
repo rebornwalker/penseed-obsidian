@@ -13,6 +13,9 @@ function errorMessage(e: unknown): string {
 export interface ReviewEntity {
   name: string;
   type?: string;
+  aliases?: string[];
+  attributes?: Record<string, unknown>;
+  description?: string;
 }
 
 export interface ReviewResolvedItem {
