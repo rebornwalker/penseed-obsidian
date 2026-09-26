@@ -44,7 +44,7 @@ export class ReanalysisResultModal extends Modal {
         : "Penseed Reanalysis",
     });
 
-    contentEl.createEl("div", {
+    contentEl.createDiv({
       text: `${this.summary.entityCount} element${plural(
         this.summary.entityCount
       )}, ${this.summary.foreshadowingCount} foreshadowing${plural(
@@ -57,13 +57,13 @@ export class ReanalysisResultModal extends Modal {
       (this.summary.addedForeshadowings > 0 ||
         this.summary.deletedForeshadowings > 0)
     ) {
-      contentEl.createEl("div", {
+      contentEl.createDiv({
         text: `+${this.summary.addedForeshadowings} added / -${this.summary.deletedForeshadowings} removed`,
       });
     }
 
     if (this.summary.semanticChangedCount > 0) {
-      contentEl.createEl("div", {
+      contentEl.createDiv({
         text: `${this.summary.semanticChangedCount} foreshadowing${plural(
           this.summary.semanticChangedCount
         )} changed meaning`,
@@ -71,7 +71,7 @@ export class ReanalysisResultModal extends Modal {
     }
 
     if (this.summary.resolvedCount > 0) {
-      contentEl.createEl("div", {
+      contentEl.createDiv({
         text: `${this.summary.resolvedCount} foreshadowing${plural(
           this.summary.resolvedCount
         )} resolved`,
@@ -80,7 +80,7 @@ export class ReanalysisResultModal extends Modal {
 
     if (this.summary.affected.length > 0) {
       contentEl
-        .createEl("div", {
+        .createDiv({
           text: `${this.summary.affected.length} downstream chapter${plural(
             this.summary.affected.length
           )} affected — re-analyze them to refresh`,
@@ -88,7 +88,7 @@ export class ReanalysisResultModal extends Modal {
         .addClass("penseed-cta-label");
 
       if (this.summary.estimatedReplayCredits > 0) {
-        contentEl.createEl("div", {
+        contentEl.createDiv({
           text: `Estimated ${this.summary.estimatedReplayCredits} credits to re-analyze all downstream chapters.`,
         });
       }
@@ -114,7 +114,7 @@ export class ReanalysisResultModal extends Modal {
     const label = item.noteTitle
       ? `Chapter ${item.chapterNumber} — ${item.noteTitle}`
       : `Chapter ${item.chapterNumber} — note not found`;
-    li.createEl("span", { text: label });
+    li.createSpan({ text: label });
 
     const replayBtn = li.createEl("button", { text: "Re-analyze now" });
     replayBtn.addClass("penseed-replay-button");

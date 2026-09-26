@@ -73,7 +73,7 @@ class ProjectSuggestModal extends SuggestModal<PenseedProject> {
   }
 
   renderSuggestion(project: PenseedProject, el: HTMLElement): void {
-    el.createEl("div", { text: project.title });
+    el.createDiv({ text: project.title });
     el.createEl("small", { text: `Project #${project.id}` });
   }
 

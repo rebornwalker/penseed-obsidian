@@ -1,4 +1,5 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab } from "obsidian";
+import type { SettingDefinitionItem } from "obsidian";
 import type PenseedPlugin from "./main";
 
 export interface PenseedSettings {
@@ -13,59 +14,60 @@ export const DEFAULT_SETTINGS: PenseedSettings = {
 
 export class PenseedSettingTab extends PluginSettingTab {
   plugin: PenseedPlugin;
+  private connecting = false;
 
   constructor(app: App, plugin: PenseedPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
 
-  display(): void {
-    const { containerEl } = this;
-    containerEl.empty();
-
+  getSettingDefinitions(): SettingDefinitionItem[] {
     if (this.plugin.auth.isConnected()) {
       const email = this.plugin.auth.getEmail();
-      new Setting(containerEl)
-        .setName("Connected to Penseed")
-        .setDesc(email ? `Signed in as ${email}` : "Signed in to Penseed.")
-        .addButton((button) =>
-          button
-            .setButtonText("Disconnect")
-            .setDestructive()
-            .onClick(async () => {
-              await this.plugin.auth.disconnect();
-              new Notice("Disconnected from Penseed.");
-              this.display();
-            })
-        );
-    } else {
-      new Setting(containerEl)
-        .setName("Connect to Penseed")
-        .setDesc(
-          "Sign in to Penseed in your browser to enable note analysis. " +
-            "No token copy-paste needed."
-        )
-        .addButton((button) =>
-          button
-            .setButtonText("Connect Penseed")
-            .setCta()
-            .onClick(async () => {
-              button.setButtonText("Waiting for authorization...");
-              button.setDisabled(true);
-              try {
-                const email = await this.plugin.auth.connect();
-                new Notice(
-                  `Connected to Penseed${email ? ` as ${email}` : ""}.`
-                );
-              } catch (e) {
-                new Notice(
-                  e instanceof Error ? e.message : "Sign-in failed."
-                );
-              } finally {
-                this.display();
-              }
-            })
-        );
+      return [
+        {
+          name: "Disconnect from Penseed",
+          desc: email ? `Signed in as ${email}` : "Signed in to Penseed.",
+          action: () => {
+            void this.disconnect();
+          },
+        },
+      ];
     }
+
+    return [
+      {
+        name: this.connecting
+          ? "Waiting for authorization..."
+          : "Connect to Penseed",
+        desc:
+          "Sign in to Penseed in your browser to enable note analysis. " +
+          "No token copy-paste needed.",
+        disabled: () => this.connecting,
+        action: () => {
+          void this.connect();
+        },
+      },
+    ];
+  }
+
+  private async connect(): Promise<void> {
+    this.connecting = true;
+    this.update();
+    try {
+      const email = await this.plugin.auth.connect();
+      new Notice(`Connected to Penseed${email ? ` as ${email}` : ""}.`);
+    } catch (e) {
+      new Notice(e instanceof Error ? e.message : "Sign-in failed.");
+    } finally {
+      this.connecting = false;
+      this.update();
+    }
+  }
+
+  private async disconnect(): Promise<void> {
+    await this.plugin.auth.disconnect();
+    new Notice("Disconnected from Penseed.");
+    this.update();
   }
 }
