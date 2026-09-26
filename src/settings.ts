@@ -31,7 +31,7 @@ export class PenseedSettingTab extends PluginSettingTab {
         .addButton((button) =>
           button
             .setButtonText("Disconnect")
-            .setWarning()
+            .setDestructive()
             .onClick(async () => {
               await this.plugin.auth.disconnect();
               new Notice("Disconnected from Penseed.");

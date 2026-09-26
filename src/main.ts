@@ -90,7 +90,7 @@ class ProjectSuggestModal extends SuggestModal<PenseedProject> {
     // selected, so resolving null here would win the race and swallow the
     // choice. Defer cancellation to the next task; a real selection (which
     // fires synchronously right after close) then wins instead.
-    setTimeout(() => {
+    window.setTimeout(() => {
       if (!this.settled) {
         this.settled = true;
         this.resolve(null);
@@ -111,7 +111,7 @@ export default class PenseedPlugin extends Plugin {
     this.addSettingTab(new PenseedSettingTab(this.app, this));
 
     this.addRibbonIcon("feather", "Analyze current note with Penseed", () => {
-      this.analyzeCurrentNote();
+      void this.analyzeCurrentNote();
     });
 
     this.registerView(
@@ -120,7 +120,7 @@ export default class PenseedPlugin extends Plugin {
     );
 
     this.addRibbonIcon("layout-grid", "Open foreshadowing board", () => {
-      this.activateBoardView();
+      void this.activateBoardView();
     });
 
     this.addCommand({
@@ -140,7 +140,7 @@ export default class PenseedPlugin extends Plugin {
     const { workspace } = this.app;
     const existing = workspace.getLeavesOfType(VIEW_TYPE_FORESHADOWING_BOARD)[0];
     if (existing) {
-      workspace.revealLeaf(existing);
+      void workspace.revealLeaf(existing);
       const view = existing.view;
       if (view instanceof ForeshadowingBoardView) view.refresh();
       return;
@@ -150,7 +150,7 @@ export default class PenseedPlugin extends Plugin {
       type: VIEW_TYPE_FORESHADOWING_BOARD,
       active: true,
     });
-    workspace.revealLeaf(leaf);
+    void workspace.revealLeaf(leaf);
   }
 
   async loadSettings(): Promise<void> {
@@ -313,18 +313,10 @@ export default class PenseedPlugin extends Plugin {
       const chapterSummary = resolution?.chapter_summary;
       const summary: ReviewChapterSummary | null = chapterSummary
         ? {
-            revelations: toStringArray(
-              (chapterSummary as Record<string, unknown>).revelations
-            ),
-            resolutions: toStringArray(
-              (chapterSummary as Record<string, unknown>).resolutions
-            ),
-            plot_advances: toStringArray(
-              (chapterSummary as Record<string, unknown>).plot_advances
-            ),
-            key_entities: toStringArray(
-              (chapterSummary as Record<string, unknown>).key_entities
-            ),
+            revelations: toStringArray(chapterSummary.revelations),
+            resolutions: toStringArray(chapterSummary.resolutions),
+            plot_advances: toStringArray(chapterSummary.plot_advances),
+            key_entities: toStringArray(chapterSummary.key_entities),
           }
         : null;
 

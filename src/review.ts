@@ -427,9 +427,7 @@ export class AnalysisReviewModal extends Modal {
     }
     const tooltip = this.tooltipEl;
     tooltip.textContent = text;
-    tooltip.style.visibility = "hidden";
-    tooltip.style.left = "0px";
-    tooltip.style.top = "0px";
+    tooltip.removeClass("is-visible");
     if (!tooltip.isConnected) document.body.appendChild(tooltip);
 
     const rect = anchor.getBoundingClientRect();
@@ -443,10 +441,10 @@ export class AnalysisReviewModal extends Modal {
 
     tooltip.style.left = `${left}px`;
     tooltip.style.top = `${top}px`;
-    tooltip.style.visibility = "visible";
+    tooltip.addClass("is-visible");
   }
 
   private hideTooltip(): void {
-    if (this.tooltipEl) this.tooltipEl.style.visibility = "hidden";
+    this.tooltipEl?.removeClass("is-visible");
   }
 }

@@ -248,6 +248,10 @@
   visibility: hidden;
 }
 
+.penseed-card-tooltip.is-visible {
+  visibility: visible;
+}
+
 /* ---- Analysis review modal (Phase 0.14) ---- */
 
 .penseed-review-modal {

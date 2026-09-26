@@ -123,16 +123,18 @@ export class ReanalysisResultModal extends Modal {
     const ignoreBtn = li.createEl("button", { text: "Ignore" });
     ignoreBtn.addClass("penseed-ignore-button");
 
-    replayBtn.addEventListener("click", async () => {
-      replayBtn.disabled = true;
-      replayBtn.textContent = "Re-analyzing...";
-      try {
-        const ok = await item.onReplay();
-        replayBtn.textContent = ok ? "Done" : "Failed";
-        ignoreBtn.remove();
-      } catch {
-        replayBtn.textContent = "Failed";
-      }
+    replayBtn.addEventListener("click", () => {
+      void (async () => {
+        replayBtn.disabled = true;
+        replayBtn.textContent = "Re-analyzing...";
+        try {
+          const ok = await item.onReplay();
+          replayBtn.textContent = ok ? "Done" : "Failed";
+          ignoreBtn.remove();
+        } catch {
+          replayBtn.textContent = "Failed";
+        }
+      })();
     });
 
     ignoreBtn.addEventListener("click", () => {

@@ -137,11 +137,11 @@ export class ForeshadowingBoardView extends ItemView {
       select.createEl("option", { text: p.title, value: String(p.id) });
     }
     select.value = String(this.projectId);
-    select.addEventListener("change", async () => {
+    select.addEventListener("change", () => {
       this.projectId = Number(select.value);
       this.plugin.settings.lastProjectId = this.projectId;
-      await this.plugin.saveSettings();
-      await this.loadBoard();
+      void this.plugin.saveSettings();
+      void this.loadBoard();
     });
 
     const refreshBtn = header.createEl("button", {
@@ -149,7 +149,9 @@ export class ForeshadowingBoardView extends ItemView {
     });
     setIcon(refreshBtn, "refresh-cw");
     refreshBtn.setAttribute("aria-label", "Refresh board");
-    refreshBtn.addEventListener("click", () => this.loadBoard());
+    refreshBtn.addEventListener("click", () => {
+      void this.loadBoard();
+    });
   }
 
   private renderColumns(): void {
@@ -196,9 +198,9 @@ export class ForeshadowingBoardView extends ItemView {
   private appendCard(item: ForeshadowingItem): void {
     if (!this.boardEl) return;
     const status = item.status ?? "pending";
-    const bodyEl = this.boardEl.querySelector(
+    const bodyEl = this.boardEl.querySelector<HTMLElement>(
       `.penseed-col[data-status="${status}"] .penseed-col-body`
-    ) as HTMLElement | null;
+    );
     if (!bodyEl) return;
 
     const card = bodyEl.createDiv({ cls: "penseed-card" });
@@ -246,9 +248,7 @@ export class ForeshadowingBoardView extends ItemView {
     }
     const tooltip = this.tooltipEl;
     tooltip.textContent = text;
-    tooltip.style.visibility = "hidden";
-    tooltip.style.left = "0px";
-    tooltip.style.top = "0px";
+    tooltip.removeClass("is-visible");
     if (!tooltip.isConnected) document.body.appendChild(tooltip);
 
     const rect = card.getBoundingClientRect();
@@ -267,11 +267,11 @@ export class ForeshadowingBoardView extends ItemView {
 
     tooltip.style.left = `${left}px`;
     tooltip.style.top = `${top}px`;
-    tooltip.style.visibility = "visible";
+    tooltip.addClass("is-visible");
   }
 
   private hideTooltip(): void {
-    if (this.tooltipEl) this.tooltipEl.style.visibility = "hidden";
+    this.tooltipEl?.removeClass("is-visible");
   }
 
   private async handleDrop(id: number, newStatus: string): Promise<void> {
@@ -321,9 +321,9 @@ export class ForeshadowingBoardView extends ItemView {
   private updateColumnCounts(): void {
     if (!this.boardEl) return;
     for (const col of COLUMNS) {
-      const countEl = this.boardEl.querySelector(
+      const countEl = this.boardEl.querySelector<HTMLElement>(
         `.penseed-col[data-status="${col.status}"] .penseed-col-count`
-      ) as HTMLElement | null;
+      );
       if (!countEl) continue;
       const count = this.boardEl.querySelectorAll(
         `.penseed-col[data-status="${col.status}"] .penseed-card`
@@ -386,6 +386,8 @@ export class ForeshadowingBoardView extends ItemView {
     });
     box.createDiv({ cls: "penseed-board-empty-text", text: errorMessage(e) });
     const btn = box.createEl("button", { text: "Retry", cls: "mod-cta" });
-    btn.addEventListener("click", () => this.loadBoard());
+    btn.addEventListener("click", () => {
+      void this.loadBoard();
+    });
   }
 }
