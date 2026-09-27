@@ -510,3 +510,16 @@ body.penseed-resizing {
   cursor: nwse-resize;
   user-select: none;
 }
+
+/* ---- Reanalysis confirmation modal ---- */
+
+.penseed-confirm h2 {
+  margin: 0 0 0.5em;
+}
+
+.penseed-confirm .penseed-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+  margin-top: 1em;
+}

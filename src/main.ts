@@ -17,8 +17,15 @@ import {
   analyzeChapterResolution,
   updateForeshadowingStatus,
   PenseedProject,
+  PenseedChapter,
 } from "./api";
-import { ReanalysisResultModal, ReplayItem } from "./ui";
+import {
+  ReanalysisResultModal,
+  ConfirmReanalysisModal,
+  ReplayItem,
+  ReanalysisTarget,
+  ReanalysisDecision,
+} from "./ui";
 import {
   AnalysisReviewModal,
   ReviewResolvedItem,
@@ -232,8 +239,9 @@ export default class PenseedPlugin extends Plugin {
 
     // Resolve the target project (reuse the last selection when still valid).
     let projectId: number;
+    let projects: PenseedProject[] = [];
     try {
-      const projects = await listProjects(apiUrl, token);
+      projects = await listProjects(apiUrl, token);
       if (projects.length === 0) {
         new Notice("You don't have any projects yet. Create one at Penseed first.");
         return;
@@ -256,18 +264,53 @@ export default class PenseedPlugin extends Plugin {
     const notice = new Notice("Analyzing with Penseed...", 0);
 
     try {
+      const parsedChapterNumber = extractChapterNumber(file.basename);
+      const wordCount = smartWordCount(content);
+
       // get_or_create the chapter by chapter_number. `isNew` (201 vs 200) is the
       // branch point: a brand-new chapter goes through extract → review → save,
-      // while an existing chapter (edited historical text) re-runs in place.
-      const { chapter, isNew } = await createChapter(
-        apiUrl,
-        token,
-        projectId,
-        file.basename,
-        extractChapterNumber(file.basename),
-        smartWordCount(content),
-        content
-      );
+      // while an existing chapter re-runs in place. When a note collides with an
+      // existing chapter in the remembered project, confirm before overwriting.
+      let chapter: PenseedChapter;
+      let isNew = false;
+      for (;;) {
+        const created = await createChapter(
+          apiUrl,
+          token,
+          projectId,
+          file.basename,
+          parsedChapterNumber,
+          wordCount,
+          content
+        );
+        chapter = created.chapter;
+        isNew = created.isNew;
+
+        if (isNew) break;
+
+        const targetProject = projects.find((p) => p.id === projectId);
+        const decision = await this.confirmReanalysis({
+          projectTitle: targetProject?.title ?? `#${projectId}`,
+          chapterNumber: chapter.chapter_number ?? parsedChapterNumber,
+          chapterTitle: chapter.title ?? file.basename,
+        });
+
+        if (decision === "overwrite") break;
+        if (decision === "cancel") {
+          notice.hide();
+          return;
+        }
+
+        // "Choose Different Project": re-pick and retry get_or_create there.
+        const chosen = await this.chooseProject(projects);
+        if (chosen === null) {
+          notice.hide();
+          return;
+        }
+        projectId = chosen.id;
+        this.settings.lastProjectId = projectId;
+        await this.saveSettings();
+      }
 
       if (!isNew) {
         // Historical chapter: recompute in place, auto-commit, flag downstream.
@@ -298,8 +341,7 @@ export default class PenseedPlugin extends Plugin {
 
       // New chapter: extract candidates and entities without committing, run
       // resolution analysis, then let the author pick what to keep.
-      const chapterNumber =
-        chapter.chapter_number ?? extractChapterNumber(file.basename);
+      const chapterNumber = chapter.chapter_number ?? parsedChapterNumber;
 
       const [foreshadowingResult, entityResult, resolutionResult] =
         await Promise.allSettled([
@@ -541,6 +583,14 @@ export default class PenseedPlugin extends Plugin {
   ): Promise<PenseedProject | null> {
     return new Promise((resolve) => {
       new ProjectSuggestModal(this.app, projects, resolve).open();
+    });
+  }
+
+  private confirmReanalysis(
+    target: ReanalysisTarget
+  ): Promise<ReanalysisDecision> {
+    return new Promise((resolve) => {
+      new ConfirmReanalysisModal(this.app, target, resolve).open();
     });
   }
 
