@@ -182,6 +182,12 @@ export default class PenseedPlugin extends Plugin {
       name: "Open Foreshadowing Board",
       callback: () => this.activateBoardView(),
     });
+
+    this.addCommand({
+      id: "reassign-folder-project",
+      name: "Change project for this note's folder",
+      callback: () => this.reassignFolderProject(),
+    });
   }
 
   async activateBoardView(): Promise<void> {
@@ -237,7 +243,10 @@ export default class PenseedPlugin extends Plugin {
       return;
     }
 
-    // Resolve the target project (reuse the last selection when still valid).
+    // Resolve the target project. A remembered folder→project mapping wins when
+    // still valid; otherwise prompt and remember the choice so the same folder
+    // routes to the same project on subsequent analyses.
+    const folderPath = file.parent?.path ?? "";
     let projectId: number;
     let projects: PenseedProject[] = [];
     try {
@@ -246,13 +255,14 @@ export default class PenseedPlugin extends Plugin {
         new Notice("You don't have any projects yet. Create one at Penseed first.");
         return;
       }
-      const remembered = this.settings.lastProjectId;
-      if (remembered !== null && projects.some((p) => p.id === remembered)) {
-        projectId = remembered;
+      const mapped = this.settings.folderProjectMap[folderPath];
+      if (mapped !== undefined && projects.some((p) => p.id === mapped)) {
+        projectId = mapped;
       } else {
         const chosen = await this.chooseProject(projects);
         if (chosen === null) return;
         projectId = chosen.id;
+        this.settings.folderProjectMap[folderPath] = projectId;
         this.settings.lastProjectId = projectId;
         await this.saveSettings();
       }
@@ -308,6 +318,7 @@ export default class PenseedPlugin extends Plugin {
           return;
         }
         projectId = chosen.id;
+        this.settings.folderProjectMap[folderPath] = projectId;
         this.settings.lastProjectId = projectId;
         await this.saveSettings();
       }
@@ -576,6 +587,37 @@ export default class PenseedPlugin extends Plugin {
       console.error("[Penseed] Failed to replay chapter", e);
       return false;
     }
+  }
+
+  private async reassignFolderProject(): Promise<void> {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      new Notice("Open a note first.");
+      return;
+    }
+    const token = await this.auth.getAccessToken();
+    if (!token) {
+      new Notice("Please connect to Penseed in Settings first.");
+      return;
+    }
+    let projects: PenseedProject[];
+    try {
+      projects = await listProjects(this.settings.apiUrl, token);
+    } catch (e) {
+      this.notifyError(e);
+      return;
+    }
+    if (projects.length === 0) {
+      new Notice("You don't have any projects yet. Create one at Penseed first.");
+      return;
+    }
+    const folderPath = file.parent?.path ?? "";
+    const chosen = await this.chooseProject(projects);
+    if (chosen === null) return;
+    this.settings.folderProjectMap[folderPath] = chosen.id;
+    this.settings.lastProjectId = chosen.id;
+    await this.saveSettings();
+    new Notice(`"${folderPath || "Vault root"}" now maps to "${chosen.title}".`);
   }
 
   private chooseProject(

@@ -5,11 +5,13 @@ import type PenseedPlugin from "./main";
 export interface PenseedSettings {
   apiUrl: string;
   lastProjectId: number | null;
+  folderProjectMap: Record<string, number>;
 }
 
 export const DEFAULT_SETTINGS: PenseedSettings = {
   apiUrl: "https://api.penseed.app",
   lastProjectId: null,
+  folderProjectMap: {},
 };
 
 export class PenseedSettingTab extends PluginSettingTab {
