@@ -38,6 +38,8 @@ export interface ReanalyzeResult {
   semantic_changed_count: number;
   orphan_entities_deleted: number;
   foreshadowings_resolved: number;
+  partially_resolved: number;
+  progressed: number;
   estimated_replay_credits: number;
 }
 

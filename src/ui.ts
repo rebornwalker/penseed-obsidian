@@ -23,6 +23,8 @@ export interface ReanalysisSummary {
   deletedForeshadowings: number;
   semanticChangedCount: number;
   resolvedCount: number;
+  partiallyResolved: number;
+  progressed: number;
   estimatedReplayCredits: number;
   projectId: number;
   affected: ReplayItem[];
@@ -82,12 +84,20 @@ export class ReanalysisResultModal extends Modal {
       });
     }
 
+    const resolutionParts: string[] = [];
     if (this.summary.resolvedCount > 0) {
-      contentEl.createDiv({
-        text: `${this.summary.resolvedCount} foreshadowing${plural(
-          this.summary.resolvedCount
-        )} resolved`,
-      });
+      resolutionParts.push(`${this.summary.resolvedCount} fully resolved`);
+    }
+    if (this.summary.partiallyResolved > 0) {
+      resolutionParts.push(
+        `${this.summary.partiallyResolved} partially resolved`
+      );
+    }
+    if (this.summary.progressed > 0) {
+      resolutionParts.push(`${this.summary.progressed} progressed`);
+    }
+    if (resolutionParts.length > 0) {
+      contentEl.createDiv({ text: resolutionParts.join(" · ") });
     }
 
     // Read-only listing of what this chapter extracted. Editing/removal stays
