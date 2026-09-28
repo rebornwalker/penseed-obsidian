@@ -73,14 +73,23 @@ function chineseToNumber(text: string): number | null {
 }
 
 function extractChapterNumber(filename: string): number | null {
-  const arabic = filename.match(/\d+/);
-  if (arabic) return parseInt(arabic[0], 10);
-
+  // 1. 中文「第N章/回/节/卷/部」优先
   const chinese = filename.match(/第([零〇一二两三四五六七八九十百千万]+)[章回节卷部]/);
   if (chinese) {
     const value = chineseToNumber(chinese[1]);
     if (value !== null) return value;
   }
+
+  // 2. 英文「Chapter N / Ch.N」次优先（避免把标题里的数字误当章节号）
+  const english = filename.match(/chapter\s*(\d+)/i);
+  if (english) return parseInt(english[1], 10);
+
+  // 3. 阿拉伯数字兜底：先剥掉日期前缀（如 2026-09-28），再取第一个独立数字。
+  //    修复：/\d+/ 会误抓日期年份（"2026-09-28 第5章" → 抓到 2026）。
+  const stripped = filename.replace(/^\d{4}[-_.\/]\d{1,2}[-_.\/]\d{1,2}[-_.\/]?/, "");
+  const arabic = stripped.match(/\d+/);
+  if (arabic) return parseInt(arabic[0], 10);
+
   return null;
 }
 
