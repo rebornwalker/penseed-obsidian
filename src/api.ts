@@ -303,6 +303,39 @@ export async function listForeshadowings(
   );
 }
 
+export interface EntityListItem {
+  id: number;
+  canonical_name: string;
+  aliases?: string[];
+  display_name?: string | null;
+  entity_type: string;
+  description?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * List entities, optionally scoped to a single chapter (via entity_facts).
+ * Used by the reanalysis result modal to show what a chapter extracted.
+ */
+export async function listEntities(
+  apiUrl: string,
+  token: string,
+  projectId: number,
+  chapterId?: number
+): Promise<EntityListItem[]> {
+  const params = new URLSearchParams();
+  params.set("project_id", String(projectId));
+  if (chapterId !== undefined) {
+    params.set("chapter_id", String(chapterId));
+  }
+  return request<EntityListItem[]>(
+    apiUrl,
+    token,
+    `/api/entities?${params.toString()}`,
+    "GET"
+  );
+}
+
 export async function saveForeshadowing(
   apiUrl: string,
   token: string,

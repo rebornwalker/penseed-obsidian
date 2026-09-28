@@ -47,6 +47,51 @@
   border: 1px solid var(--background-modifier-border);
 }
 
+.penseed-result .penseed-manage-notice {
+  margin-top: 1em;
+  padding: 0.6em 0.8em;
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--interactive-accent);
+  background: var(--background-secondary);
+  font-weight: 600;
+}
+
+.penseed-result h3 {
+  margin-top: 1em;
+  margin-bottom: 0.3em;
+  font-size: 0.95em;
+  font-weight: 600;
+}
+
+.penseed-result .penseed-item-list {
+  list-style: none;
+  margin: 0 0 1em;
+  padding: 0;
+  max-height: 12em;
+  overflow-y: auto;
+}
+
+.penseed-result .penseed-item-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5em;
+  padding: 0.15em 0;
+}
+
+.penseed-result .penseed-item-row span:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
+.penseed-result .penseed-status-tag {
+  flex-shrink: 0;
+  font-size: 0.75em;
+  padding: 0.1em 0.5em;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
 /* ---- Foreshadowing board (Phase 0.13) ---- */
 
 .penseed-board {

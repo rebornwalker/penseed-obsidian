@@ -6,6 +6,16 @@ export interface ReplayItem {
   onReplay: () => Promise<boolean>;
 }
 
+export interface ForeshadowingSummaryItem {
+  text: string;
+  status: string;
+}
+
+export interface EntitySummaryItem {
+  name: string;
+  type: string;
+}
+
 export interface ReanalysisSummary {
   entityCount: number;
   foreshadowingCount: number;
@@ -17,6 +27,8 @@ export interface ReanalysisSummary {
   projectId: number;
   affected: ReplayItem[];
   isFirstAnalysis: boolean;
+  foreshadowings: ForeshadowingSummaryItem[];
+  entities: EntitySummaryItem[];
 }
 
 const WEB_BASE_URL = "https://penseed.app";
@@ -76,6 +88,45 @@ export class ReanalysisResultModal extends Modal {
           this.summary.resolvedCount
         )} resolved`,
       });
+    }
+
+    // Read-only listing of what this chapter extracted. Editing/removal stays
+    // on the web app, so we call that out prominently rather than offer controls.
+    const hasItems =
+      this.summary.foreshadowings.length > 0 || this.summary.entities.length > 0;
+    if (hasItems) {
+      const manageNotice = contentEl.createDiv({
+        text: "These items are read-only here. Edit or remove foreshadowings and elements on the Penseed web app.",
+      });
+      manageNotice.addClass("penseed-manage-notice");
+    }
+
+    if (this.summary.foreshadowings.length > 0) {
+      contentEl.createEl("h3", { text: "Foreshadowings" });
+      const fsList = contentEl.createEl("ul");
+      fsList.addClass("penseed-item-list");
+      for (const f of this.summary.foreshadowings) {
+        const li = fsList.createEl("li");
+        li.addClass("penseed-item-row");
+        li.createSpan({ text: f.text || "(untitled)" });
+        if (f.status) {
+          li.createSpan({ text: f.status, cls: "penseed-status-tag" });
+        }
+      }
+    }
+
+    if (this.summary.entities.length > 0) {
+      contentEl.createEl("h3", { text: "Elements" });
+      const entList = contentEl.createEl("ul");
+      entList.addClass("penseed-item-list");
+      for (const e of this.summary.entities) {
+        const li = entList.createEl("li");
+        li.addClass("penseed-item-row");
+        li.createSpan({ text: e.name });
+        if (e.type) {
+          li.createSpan({ text: e.type, cls: "penseed-status-tag" });
+        }
+      }
     }
 
     if (this.summary.affected.length > 0) {

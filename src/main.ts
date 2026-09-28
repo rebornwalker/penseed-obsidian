@@ -9,6 +9,8 @@ import {
   listProjects,
   createChapter,
   listChapters,
+  listEntities,
+  listForeshadowings,
   reanalyzeChapter,
   extractForeshadowing,
   extractEntities,
@@ -344,6 +346,29 @@ export default class PenseedPlugin extends Plugin {
           result.affected_downstream_chapters
         );
 
+        // Fetch the chapter's current foreshadowings & entities so the result
+        // modal can list exactly what was extracted. Editing/removal stays on
+        // the web app (read-only here).
+        const [fsResult, entityResult] = await Promise.allSettled([
+          listForeshadowings(apiUrl, token, chapter.id, projectId),
+          listEntities(apiUrl, token, projectId, chapter.id),
+        ]);
+
+        const foreshadowings =
+          fsResult.status === "fulfilled"
+            ? (fsResult.value.items ?? []).map((f) => ({
+                text: f.foreshadowing_text_preview ?? "",
+                status: typeof f.status === "string" ? f.status : "",
+              }))
+            : [];
+        const entities =
+          entityResult.status === "fulfilled"
+            ? entityResult.value.map((e) => ({
+                name: e.display_name ?? e.canonical_name,
+                type: e.entity_type,
+              }))
+            : [];
+
         new ReanalysisResultModal(this.app, {
           entityCount: result.entity_count,
           foreshadowingCount: result.foreshadowing_count,
@@ -355,6 +380,8 @@ export default class PenseedPlugin extends Plugin {
           projectId,
           affected,
           isFirstAnalysis: false,
+          foreshadowings,
+          entities,
         }).open();
         return;
       }
