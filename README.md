@@ -24,6 +24,22 @@ chapter 500 never means re-reading chapters 1 through 499.
 | At 500+ chapters | Slow, costly, forgetful | Fast, affordable, precise |
 | Foreshadowing | Not tracked | Plant → track → payoff, fully managed |
 
+## Why Penseed stays fast
+
+Say you rewrite chapter 205 of a 500-chapter novel. Most tools respond by
+re-reading all 295 chapters that come after it — every single one — to catch up.
+That's slow and expensive, and you pay for all of it.
+
+Penseed doesn't. It already knows your story, so it can tell which of those
+later chapters your change actually affects — usually just a handful — and it
+re-checks only those, one after another in order. You pay for a few chapters,
+not hundreds.
+
+That's the whole idea behind Penseed: read each chapter once, remember every
+thread, character, and rule it introduces, and never make you re-read the book
+from the start. It stays fast and cheap no matter how long your novel gets — and
+it never needs to keep your original text to do it.
+
 ## What Penseed tracks for you
 
 - **Foreshadowing** — the one thing almost no other tool does. Penseed remembers
