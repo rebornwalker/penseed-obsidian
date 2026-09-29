@@ -226,6 +226,56 @@ export async function reanalyzeChapter(
   );
 }
 
+export interface StartWaveResult {
+  wave_id: number;
+  wave_seq: number;
+  frozen_chapter_ids: number[];
+  frozen_count: number;
+}
+
+export interface EndWaveResult {
+  converged: boolean;
+  new_stale_chapter_ids: number[];
+  wave_seq: number | null;
+  max_waves_reached: boolean;
+}
+
+/**
+ * Phase 0.16-08: start a reanalysis wave. Freezes the current stale chapters and
+ * returns the frozen list (already ordered by chapter_number ascending).
+ */
+export async function startReanalysisWave(
+  apiUrl: string,
+  token: string,
+  projectId: number
+): Promise<StartWaveResult> {
+  return request<StartWaveResult>(
+    apiUrl,
+    token,
+    "/api/chapters/reanalysis-wave/start",
+    "POST",
+    { project_id: projectId }
+  );
+}
+
+/**
+ * Phase 0.16-08: end the wave (consolidation). Returns whether the cascade
+ * converged and any NEW stale chapters outside the frozen set.
+ */
+export async function endReanalysisWave(
+  apiUrl: string,
+  token: string,
+  projectId: number
+): Promise<EndWaveResult> {
+  return request<EndWaveResult>(
+    apiUrl,
+    token,
+    "/api/chapters/reanalysis-wave/end",
+    "POST",
+    { project_id: projectId }
+  );
+}
+
 export async function createChapter(
   apiUrl: string,
   token: string,

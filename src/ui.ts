@@ -3,7 +3,14 @@ import { App, Modal } from "obsidian";
 export interface ReplayItem {
   chapterNumber: number;
   noteTitle: string | null;
-  onReplay: () => Promise<boolean>;
+}
+
+export interface BatchReplayResult {
+  replayed: number;
+  failed: number;
+  skippedNoNote: number;
+  newStaleChapterIds: number[];
+  converged: boolean;
 }
 
 export interface ForeshadowingSummaryItem {
@@ -31,6 +38,9 @@ export interface ReanalysisSummary {
   isFirstAnalysis: boolean;
   foreshadowings: ForeshadowingSummaryItem[];
   entities: EntitySummaryItem[];
+  onBatchReplay?: (
+    onProgress: (current: number, total: number, chapterNumber: number) => void
+  ) => Promise<BatchReplayResult>;
 }
 
 const WEB_BASE_URL = "https://penseed.app";
@@ -144,7 +154,7 @@ export class ReanalysisResultModal extends Modal {
         .createDiv({
           text: `${this.summary.affected.length} downstream chapter${plural(
             this.summary.affected.length
-          )} affected — re-analyze them to refresh`,
+          )} affected`,
         })
         .addClass("penseed-cta-label");
 
@@ -154,9 +164,23 @@ export class ReanalysisResultModal extends Modal {
         });
       }
 
+      // Read-only list of affected chapters. Individual per-row "re-analyze" is
+      // deliberately removed: re-analyzing a single stale chapter out of order
+      // corrupts downstream state (cascade/butterfly effect). The only action is
+      // one batch button that re-analyzes the whole set in chapter order.
       const list = contentEl.createEl("ul");
+      list.addClass("penseed-item-list");
       for (const item of this.summary.affected) {
-        this.renderReplayRow(list, item);
+        const li = list.createEl("li");
+        li.addClass("penseed-item-row");
+        const label = item.noteTitle
+          ? `Chapter ${item.chapterNumber} — ${item.noteTitle}`
+          : `Chapter ${item.chapterNumber} — note not found`;
+        li.createSpan({ text: label });
+      }
+
+      if (this.summary.onBatchReplay) {
+        this.renderBatchReplay(contentEl);
       }
     }
 
@@ -168,39 +192,64 @@ export class ReanalysisResultModal extends Modal {
     });
   }
 
-  private renderReplayRow(list: HTMLElement, item: ReplayItem): void {
-    const li = list.createEl("li");
-    li.addClass("penseed-replay-row");
+  private renderBatchReplay(parent: HTMLElement): void {
+    const container = parent.createDiv({ cls: "penseed-batch" });
 
-    const label = item.noteTitle
-      ? `Chapter ${item.chapterNumber} — ${item.noteTitle}`
-      : `Chapter ${item.chapterNumber} — note not found`;
-    li.createSpan({ text: label });
+    const button = container.createEl("button", {
+      text: "Batch re-analyze outdated chapters",
+    });
+    button.addClass("mod-cta");
+    button.addClass("penseed-batch-button");
 
-    const replayBtn = li.createEl("button", { text: "Re-analyze now" });
-    replayBtn.addClass("penseed-replay-button");
-    replayBtn.disabled = item.noteTitle === null;
+    const status = container.createDiv({ cls: "penseed-batch-status" });
 
-    const ignoreBtn = li.createEl("button", { text: "Ignore" });
-    ignoreBtn.addClass("penseed-ignore-button");
-
-    replayBtn.addEventListener("click", () => {
+    button.addEventListener("click", () => {
       void (async () => {
-        replayBtn.disabled = true;
-        replayBtn.textContent = "Re-analyzing...";
+        button.disabled = true;
+        status.setText("Starting batch re-analysis…");
         try {
-          const ok = await item.onReplay();
-          replayBtn.textContent = ok ? "Done" : "Failed";
-          ignoreBtn.remove();
-        } catch {
-          replayBtn.textContent = "Failed";
+          const result = await this.summary.onBatchReplay!(
+            (current, total, chapterNumber) => {
+              button.setText(
+                `Re-analyzing ${current}/${total} (chapter ${chapterNumber})…`
+              );
+              status.setText(`Re-analyzing chapter ${chapterNumber}…`);
+            }
+          );
+          button.remove();
+          status.setText(this.formatBatchResult(result));
+        } catch (e) {
+          button.disabled = false;
+          button.setText("Batch re-analyze failed — retry");
+          status.setText(
+            "Batch re-analysis failed. Check the Penseed web app for details."
+          );
+          console.error("[Penseed] Batch re-analysis failed", e);
         }
       })();
     });
+  }
 
-    ignoreBtn.addEventListener("click", () => {
-      li.remove();
-    });
+  private formatBatchResult(result: BatchReplayResult): string {
+    const parts: string[] = [];
+    parts.push(
+      `${result.replayed} chapter${plural(result.replayed)} re-analyzed`
+    );
+    if (result.skippedNoNote > 0) {
+      parts.push(
+        `${result.skippedNoNote} skipped (no local note)`
+      );
+    }
+    if (result.failed > 0) {
+      parts.push(`${result.failed} failed`);
+    }
+    let text = parts.join(", ") + ".";
+    if (result.newStaleChapterIds.length > 0) {
+      text += ` ${result.newStaleChapterIds.length} more chapter${plural(
+        result.newStaleChapterIds.length
+      )} now out of date — open Penseed to continue.`;
+    }
+    return text;
   }
 
   onClose(): void {

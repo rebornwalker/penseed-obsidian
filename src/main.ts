@@ -12,6 +12,8 @@ import {
   listEntities,
   listForeshadowings,
   reanalyzeChapter,
+  startReanalysisWave,
+  endReanalysisWave,
   extractForeshadowing,
   extractEntities,
   saveForeshadowing,
@@ -25,6 +27,7 @@ import {
   ReanalysisResultModal,
   ConfirmReanalysisModal,
   ReplayItem,
+  BatchReplayResult,
   ReanalysisTarget,
   ReanalysisDecision,
 } from "./ui";
@@ -384,6 +387,8 @@ export default class PenseedPlugin extends Plugin {
           isFirstAnalysis: false,
           foreshadowings,
           entities,
+          onBatchReplay: (onProgress) =>
+            this.batchReanalyze(apiUrl, token, projectId, onProgress),
         }).open();
         return;
       }
@@ -594,8 +599,6 @@ export default class PenseedPlugin extends Plugin {
       return {
         chapterNumber: chapterNumber ?? id,
         noteTitle: note ? note.basename : null,
-        onReplay: () =>
-          this.replayChapterNote(apiUrl, token, projectId, note ?? null, id),
       };
     });
   }
@@ -625,6 +628,80 @@ export default class PenseedPlugin extends Plugin {
       console.error("[Penseed] Failed to replay chapter", e);
       return false;
     }
+  }
+
+  private async batchReanalyze(
+    apiUrl: string,
+    token: string,
+    projectId: number,
+    onProgress: (current: number, total: number, chapterNumber: number) => void
+  ): Promise<BatchReplayResult> {
+    // 1. Start the wave: freeze all currently-stale chapters. The backend
+    //    returns them already ordered by chapter_number ascending.
+    const wave = await startReanalysisWave(apiUrl, token, projectId);
+    const frozenIds = wave.frozen_chapter_ids;
+
+    // Map chapter id → chapter_number, and chapter_number → note file.
+    const numberById = new Map<number, number>();
+    try {
+      const chapters = await listChapters(apiUrl, token, projectId);
+      for (const c of chapters) {
+        if (typeof c.chapter_number === "number") {
+          numberById.set(c.id, c.chapter_number);
+        }
+      }
+    } catch (e) {
+      console.error("[Penseed] Failed to list chapters for batch reanalysis", e);
+    }
+
+    const noteByNumber = new Map<number, TFile>();
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      const n = extractChapterNumber(f.basename);
+      if (n !== null) noteByNumber.set(n, f);
+    }
+
+    // Order by chapter number ascending (backend already sorts; be explicit).
+    const ordered = frozenIds
+      .map((id) => {
+        const chapterNumber = numberById.get(id) ?? null;
+        const note =
+          chapterNumber !== null ? noteByNumber.get(chapterNumber) : undefined;
+        return { id, chapterNumber, note };
+      })
+      .sort((a, b) => (a.chapterNumber ?? 0) - (b.chapterNumber ?? 0));
+
+    let replayed = 0;
+    let failed = 0;
+    let skippedNoNote = 0;
+    const total = ordered.length;
+
+    for (let i = 0; i < ordered.length; i++) {
+      const { id, chapterNumber, note } = ordered[i];
+      onProgress(i + 1, total, chapterNumber ?? id);
+      if (!note) {
+        skippedNoNote++;
+        continue;
+      }
+      // Reanalysis inside an active wave is deferred by the backend (the chapter
+      // is frozen), so downstream stale marks are consolidated at end_wave.
+      const ok = await this.replayChapterNote(apiUrl, token, projectId, note, id);
+      if (ok) replayed++;
+      else failed++;
+    }
+
+    // 2. End the wave: consolidation returns any NEW stale chapters outside the
+    //    frozen set and whether the cascade converged.
+    let newStaleChapterIds: number[] = [];
+    let converged = true;
+    try {
+      const endResult = await endReanalysisWave(apiUrl, token, projectId);
+      newStaleChapterIds = endResult.new_stale_chapter_ids;
+      converged = endResult.converged;
+    } catch (e) {
+      console.error("[Penseed] Failed to end reanalysis wave", e);
+    }
+
+    return { replayed, failed, skippedNoNote, newStaleChapterIds, converged };
   }
 
   private async reassignFolderProject(): Promise<void> {
