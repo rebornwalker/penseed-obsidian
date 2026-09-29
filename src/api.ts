@@ -398,6 +398,34 @@ export async function saveForeshadowing(
   return request<unknown>(apiUrl, token, "/api/foreshadowing/", "POST", payload);
 }
 
+export interface ForeshadowingBatchCreateResult {
+  created: Array<{ [key: string]: unknown }>;
+  skipped: Array<{ [key: string]: unknown }>;
+  created_count: number;
+  skipped_count: number;
+  failed_count: number;
+  errors: string[];
+}
+
+/**
+ * Phase 0.17: save every foreshadowing candidate in a single request. The
+ * backend batches dedup + create + embedding + Qdrant upsert + snapshot so 17
+ * candidates no longer become 17 slow sequential/parallel round-trips.
+ */
+export async function saveForeshadowingsBatch(
+  apiUrl: string,
+  token: string,
+  items: ForeshadowingSavePayload[]
+): Promise<ForeshadowingBatchCreateResult> {
+  return request<ForeshadowingBatchCreateResult>(
+    apiUrl,
+    token,
+    "/api/foreshadowing/batch-create",
+    "POST",
+    { items }
+  );
+}
+
 export interface ForeshadowingItem {
   id: number;
   status: string | null;

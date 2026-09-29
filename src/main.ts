@@ -16,12 +16,13 @@ import {
   endReanalysisWave,
   extractForeshadowing,
   extractEntities,
-  saveForeshadowing,
+  saveForeshadowingsBatch,
   saveEntities,
   analyzeChapterResolution,
   updateForeshadowingStatus,
   PenseedProject,
   PenseedChapter,
+  ForeshadowingSavePayload,
 } from "./api";
 import {
   ReanalysisResultModal,
@@ -494,60 +495,56 @@ export default class PenseedPlugin extends Plugin {
     chapterNumber: number | null,
     selection: ReviewSelection
   ): Promise<void> {
-    // Build payloads up front, truncating the preview to 2000 chars to match
-    // the web app and keep each request small.
-    const candidates = selection.candidates.flatMap((candidate) => {
+    const items: ForeshadowingSavePayload[] = [];
+
+    for (const candidate of selection.candidates) {
       const text = candidate.foreshadowing_text_preview ?? candidate.text ?? "";
-      if (!text.trim()) return [];
-      return [
-        {
-          foreshadowing_text_preview: text.slice(0, 2000),
-          confidence:
-            typeof candidate.confidence === "number"
-              ? candidate.confidence
-              : 0.5,
-          start_position:
-            typeof candidate.start_position === "number"
-              ? candidate.start_position
-              : -1,
-          end_position:
-            typeof candidate.end_position === "number"
-              ? candidate.end_position
-              : -1,
-          is_foreshadowing: candidate.is_foreshadowing ?? true,
-          foreshadowing_type: candidate.foreshadowing_type ?? undefined,
-          target_elements: candidate.target_elements ?? undefined,
-          emotional_tone: candidate.emotional_tone ?? undefined,
-          narrative_function: candidate.narrative_function ?? undefined,
-          analysis: candidate.analysis ?? undefined,
-          improvement_suggestions:
-            candidate.improvement_suggestions ?? undefined,
-        },
-      ];
-    });
+      if (!text.trim()) continue;
+      items.push({
+        project_id: projectId,
+        chapter_id: chapterId,
+        foreshadowing_text_preview: text.slice(0, 2000),
+        confidence:
+          typeof candidate.confidence === "number"
+            ? candidate.confidence
+            : 0.5,
+        start_position:
+          typeof candidate.start_position === "number"
+            ? candidate.start_position
+            : -1,
+        end_position:
+          typeof candidate.end_position === "number"
+            ? candidate.end_position
+            : -1,
+        is_foreshadowing: candidate.is_foreshadowing ?? true,
+        foreshadowing_type: candidate.foreshadowing_type ?? undefined,
+        target_elements: candidate.target_elements ?? undefined,
+        emotional_tone: candidate.emotional_tone ?? undefined,
+        narrative_function: candidate.narrative_function ?? undefined,
+        analysis: candidate.analysis ?? undefined,
+        improvement_suggestions:
+          candidate.improvement_suggestions ?? undefined,
+      });
+    }
 
-    // Save in parallel (the web app uses Promise.all), so a burst of saves
-    // finishes in seconds instead of a long sequential window that can trip the
-    // reverse proxy's timeout.
-    const results = await Promise.all(
-      candidates.map((c) =>
-        saveForeshadowing(apiUrl, token, {
-          project_id: projectId,
-          chapter_id: chapterId,
-          ...c,
-        }).then(
-          () => ({ ok: true as const }),
-          (e) => ({ ok: false as const, error: e })
-        )
-      )
-    );
+    let saved = 0;
+    let skipped = 0;
+    const failedErrors: string[] = [];
 
-    const saved = results.filter((r) => r.ok).length;
-    const failedResults = results.filter(
-      (r): r is { ok: false; error: unknown } => !r.ok
-    );
-    for (const r of failedResults) {
-      console.error("[Penseed] Failed to save foreshadowing", r.error);
+    if (items.length > 0) {
+      try {
+        const result = await saveForeshadowingsBatch(apiUrl, token, items);
+        saved = result.created_count ?? 0;
+        skipped = result.skipped_count ?? 0;
+        for (const err of result.errors ?? []) {
+          if (err) failedErrors.push(err);
+        }
+      } catch (e) {
+        failedErrors.push(
+          e instanceof ApiError ? e.userMessage : "unknown error"
+        );
+        console.error("[Penseed] Failed to save foreshadowings", e);
+      }
     }
 
     if (selection.entities.length > 0) {
@@ -570,35 +567,26 @@ export default class PenseedPlugin extends Plugin {
       }
     }
 
-    const resolvedResults = await Promise.all(
-      selection.resolvedIds.map((id) =>
-        updateForeshadowingStatus(apiUrl, token, id, "resolved").then(
-          () => ({ ok: true as const }),
-          (e) => ({ ok: false as const, error: e })
-        )
-      )
-    );
-    const resolvedFailedResults = resolvedResults.filter(
-      (r): r is { ok: false; error: unknown } => !r.ok
-    );
-    for (const r of resolvedFailedResults) {
-      console.error("[Penseed] Failed to mark foreshadowing resolved", r.error);
+    let resolvedFailed = 0;
+    for (const id of selection.resolvedIds) {
+      try {
+        await updateForeshadowingStatus(apiUrl, token, id, "resolved");
+      } catch (e) {
+        resolvedFailed++;
+        console.error("[Penseed] Failed to mark foreshadowing resolved", e);
+      }
     }
 
-    const failed = failedResults.length;
-    const resolvedFailed = resolvedFailedResults.length;
-
+    const failed = failedErrors.length;
     if (failed > 0 || resolvedFailed > 0) {
       const parts: string[] = [];
       if (saved > 0) parts.push(`${saved} saved`);
+      if (skipped > 0) parts.push(`${skipped} skipped`);
       if (failed > 0) parts.push(`${failed} failed`);
       if (resolvedFailed > 0) {
         parts.push(`${resolvedFailed} resolve-update failed`);
       }
-      const firstError =
-        failedResults[0]?.error ?? resolvedFailedResults[0]?.error;
-      const suffix =
-        firstError instanceof ApiError ? ` — ${firstError.userMessage}` : "";
+      const suffix = failedErrors[0] ? ` — ${failedErrors[0]}` : "";
       new Notice(`Penseed: ${parts.join(", ")}.${suffix}`);
     } else {
       new Notice(saved > 0 ? `Saved ${saved} foreshadowing.` : "Saved.");
