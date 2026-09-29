@@ -385,6 +385,7 @@ export default class PenseedPlugin extends Plugin {
           projectId,
           affected,
           isFirstAnalysis: false,
+          unchanged: result.noop === true,
           foreshadowings,
           entities,
           onBatchReplay: (onProgress) =>

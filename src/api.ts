@@ -41,6 +41,8 @@ export interface ReanalyzeResult {
   partially_resolved: number;
   progressed: number;
   estimated_replay_credits: number;
+  noop?: boolean;
+  noop_reason?: string | null;
 }
 
 export interface ForeshadowingCandidate {

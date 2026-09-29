@@ -36,6 +36,7 @@ export interface ReanalysisSummary {
   projectId: number;
   affected: ReplayItem[];
   isFirstAnalysis: boolean;
+  unchanged?: boolean;
   foreshadowings: ForeshadowingSummaryItem[];
   entities: EntitySummaryItem[];
   onBatchReplay?: (
@@ -67,6 +68,13 @@ export class ReanalysisResultModal extends Modal {
         ? "Penseed Analysis"
         : "Penseed Reanalysis",
     });
+
+    if (this.summary.unchanged) {
+      const notice = contentEl.createDiv({
+        text: "This chapter hasn't changed since your last analysis, so Penseed skipped the re-run. Your notes are already up to date — no credits were used.",
+      });
+      notice.addClass("penseed-unchanged-notice");
+    }
 
     contentEl.createDiv({
       text: `${this.summary.entityCount} element${plural(
