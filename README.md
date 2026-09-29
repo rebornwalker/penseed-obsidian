@@ -51,6 +51,41 @@ Resolved / Cancelled). Drag a clue between columns to update its status, kept in
 sync with the web app. For the full board with relations and editing, open the
 web app.
 
+## Analyze in order — from chapter one
+
+Penseed remembers your story the way a careful editor does: by reading it **in
+order, from the first chapter onward**. Each chapter's analysis builds on every
+chapter before it. Chapter 50 is analyzed *knowing* what happened in chapters
+1–49.
+
+So when you first bring a novel into Penseed, analyze your notes **one chapter at
+a time, starting from chapter one and moving forward in order.** Don't skip
+ahead — if you analyze chapter 10 before chapters 1–9, Penseed can't see the
+clues those earlier chapters planted.
+
+**Why order matters.** Foreshadowing is a chain: a hint you plant in chapter 3
+pays off in chapter 20. If chapter 20 is analyzed before chapter 3, Penseed can't
+connect that payoff back to its hint, and the threads, characters, and world
+rules it records come out wrong. Because every later chapter then builds on that
+wrong note, a single out-of-order chapter can quietly throw off everything after
+it — the butterfly effect.
+
+### Bringing in a whole book at once
+
+If you're adding a novel you've already written — dozens or hundreds of chapters
+— you don't have to work through it one note at a time. Use the **batch-analyze**
+feature and Penseed will go through every chapter automatically, **from the first
+to the last, in the right order**. You don't have to keep track of where you are,
+or worry about skipping a chapter — the tool handles the order for you.
+
+### When you edit an earlier chapter
+
+If you rewrite chapter 100 while you're already at chapter 200, Penseed will tell
+you which later chapters are now out of date. **Don't re-analyze just one or two
+of them** — that breaks the chain the same way. Use the single **"Batch
+re-analyze outdated chapters"** button instead. It re-analyzes every affected
+chapter, one by one, in the right order, so the chain stays intact.
+
 ## Privacy
 
 When you choose to analyze a note, the plugin sends that note's content to
