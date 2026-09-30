@@ -571,3 +571,40 @@ body.penseed-resizing {
   gap: 0.5em;
   margin-top: 1em;
 }
+
+/* ---- Reanalysis: manual project reports warning ---- */
+
+.penseed-result .penseed-project-report-warning {
+  margin-top: 0.8em;
+  padding: 0.6em 0.8em;
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--color-orange, #f0a030);
+  background: var(--background-secondary);
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+.penseed-result .penseed-warning-title {
+  font-weight: 600;
+  margin-bottom: 0.3em;
+}
+
+/* ---- Persistent status bar reminder ---- */
+
+.penseed-status-warning {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.penseed-status-warning:hover {
+  color: var(--text-normal);
+}
+
+.penseed-status-warning .penseed-status-warning-icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-orange, #f0a030);
+}

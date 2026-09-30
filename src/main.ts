@@ -1,4 +1,4 @@
-import { Notice, Plugin, SuggestModal, TFile } from "obsidian";
+import { Notice, Plugin, SuggestModal, TFile, setIcon } from "obsidian";
 import {
   PenseedSettings,
   PenseedSettingTab,
@@ -31,6 +31,7 @@ import {
   BatchReplayResult,
   ReanalysisTarget,
   ReanalysisDecision,
+  WEB_BASE_URL,
 } from "./ui";
 import {
   AnalysisReviewModal,
@@ -202,6 +203,28 @@ export default class PenseedPlugin extends Plugin {
       id: "reassign-folder-project",
       name: "Change project for this note's folder",
       callback: () => this.reassignFolderProject(),
+    });
+
+    // Persistent reminder: project-wide reports (element conflicts / World State /
+    // rules) are no longer auto-run after re-analysis — the author triggers them on
+    // the web. Kept in the status bar so it's always visible without opening a panel.
+    const statusItem = this.addStatusBarItem();
+    statusItem.addClass("penseed-status-warning");
+    const statusIcon = statusItem.createSpan({ cls: "penseed-status-warning-icon" });
+    setIcon(statusIcon, "alert-triangle");
+    statusItem.createSpan({
+      text: "Penseed: run conflicts / World State / rules on web",
+    });
+    statusItem.setAttribute(
+      "title",
+      "Project-wide reports (element conflicts, World State, rules) are not updated automatically. Open the Penseed web app to run them."
+    );
+    statusItem.addEventListener("click", () => {
+      const projectId = this.settings.lastProjectId;
+      window.open(
+        projectId ? `${WEB_BASE_URL}/projects/${projectId}` : WEB_BASE_URL,
+        "_blank"
+      );
     });
   }
 

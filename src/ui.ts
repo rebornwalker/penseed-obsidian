@@ -44,7 +44,7 @@ export interface ReanalysisSummary {
   ) => Promise<BatchReplayResult>;
 }
 
-const WEB_BASE_URL = "https://penseed.app";
+export const WEB_BASE_URL = "https://penseed.app";
 
 function plural(n: number): string {
   return n === 1 ? "" : "s";
@@ -68,6 +68,18 @@ export class ReanalysisResultModal extends Modal {
         ? "Penseed Analysis"
         : "Penseed Reanalysis",
     });
+
+    if (!this.summary.isFirstAnalysis) {
+      const warn = contentEl.createDiv();
+      warn.addClass("penseed-project-report-warning");
+      const title = warn.createDiv({
+        text: "Heads up — project reports are now manual",
+      });
+      title.addClass("penseed-warning-title");
+      warn.createDiv({
+        text: "This re-analysis refreshed this chapter's elements, foreshadowings, and resolutions only. The slower project-wide checks — element conflicts, World State, and rules — no longer run automatically, so re-analysis stays fast and doesn't burn extra AI credits. To keep those reports in sync, open the web app and run them yourself. Until then, they may be out of date.",
+      });
+    }
 
     if (this.summary.unchanged) {
       const notice = contentEl.createDiv({
