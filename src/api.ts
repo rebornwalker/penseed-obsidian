@@ -245,18 +245,22 @@ export interface EndWaveResult {
 /**
  * Phase 0.16-08: start a reanalysis wave. Freezes the current stale chapters and
  * returns the frozen list (already ordered by chapter_number ascending).
+ *
+ * Pass `chapterIds` to freeze only those chapters (the current reanalysis's
+ * downstream set) instead of every stale chapter in the project.
  */
 export async function startReanalysisWave(
   apiUrl: string,
   token: string,
-  projectId: number
+  projectId: number,
+  chapterIds?: number[]
 ): Promise<StartWaveResult> {
   return request<StartWaveResult>(
     apiUrl,
     token,
     "/api/chapters/reanalysis-wave/start",
     "POST",
-    { project_id: projectId }
+    { project_id: projectId, chapter_ids: chapterIds ?? null }
   );
 }
 
@@ -275,6 +279,85 @@ export async function endReanalysisWave(
     "/api/chapters/reanalysis-wave/end",
     "POST",
     { project_id: projectId }
+  );
+}
+
+export interface ReanalysisBatchChapter {
+  chapter_id: number;
+  content: string;
+}
+
+export interface StartReanalysisBatchResult {
+  task_id: string;
+  status: string;
+  total: number;
+}
+
+export interface ReanalysisBatchStatus {
+  task_id: string;
+  status: string;
+  total: number;
+  completed: number;
+  failed: number;
+  current_chapter: number | null;
+  error: string | null;
+  result?: {
+    converged: boolean;
+    new_stale_chapter_ids: number[];
+    wave_seq: number | null;
+    max_waves_reached: boolean;
+  } | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Phase 0.18: start a backend batch-reanalysis task. The plugin submits every
+ * downstream chapter's text once, then polls status — no client-side for-loop.
+ */
+export async function startReanalysisBatch(
+  apiUrl: string,
+  token: string,
+  projectId: number,
+  chapters: ReanalysisBatchChapter[]
+): Promise<StartReanalysisBatchResult> {
+  return request<StartReanalysisBatchResult>(
+    apiUrl,
+    token,
+    "/api/chapters/reanalysis-batch",
+    "POST",
+    { project_id: projectId, chapters }
+  );
+}
+
+/**
+ * Phase 0.18: poll a batch-reanalysis task's structural progress.
+ */
+export async function getReanalysisBatchStatus(
+  apiUrl: string,
+  token: string,
+  taskId: string
+): Promise<ReanalysisBatchStatus> {
+  return request<ReanalysisBatchStatus>(
+    apiUrl,
+    token,
+    `/api/chapters/reanalysis-batch/${taskId}/status`,
+    "GET"
+  );
+}
+
+/**
+ * Phase 0.18: request cancellation of a batch-reanalysis task.
+ */
+export async function cancelReanalysisBatch(
+  apiUrl: string,
+  token: string,
+  taskId: string
+): Promise<{ success: boolean; task_id: string }> {
+  return request<{ success: boolean; task_id: string }>(
+    apiUrl,
+    token,
+    `/api/chapters/reanalysis-batch/${taskId}/cancel`,
+    "POST"
   );
 }
 

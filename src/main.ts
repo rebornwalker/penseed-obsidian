@@ -12,8 +12,8 @@ import {
   listEntities,
   listForeshadowings,
   reanalyzeChapter,
-  startReanalysisWave,
-  endReanalysisWave,
+  startReanalysisBatch,
+  getReanalysisBatchStatus,
   extractForeshadowing,
   extractEntities,
   saveForeshadowingsBatch,
@@ -23,6 +23,7 @@ import {
   PenseedProject,
   PenseedChapter,
   ForeshadowingSavePayload,
+  ReanalysisBatchChapter,
 } from "./api";
 import {
   ReanalysisResultModal,
@@ -113,6 +114,40 @@ function smartWordCount(text: string): number {
 
 function toStringArray(value: unknown): string[] | undefined {
   return Array.isArray(value) ? value.map((v) => String(v)) : undefined;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Retryable = network-level failure (no status) or a transient 5xx from the
+ * reverse proxy. Auth/quota/client errors (4xx, 402, 429) must not be retried.
+ */
+function isRetryableError(e: unknown): boolean {
+  if (!(e instanceof ApiError)) return false;
+  return e.status === null || e.status >= 500;
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  attempts = 3,
+  baseDelayMs = 2000
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (attempt < attempts && isRetryableError(e)) {
+        await sleep(baseDelayMs * Math.pow(2, attempt - 1));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastError;
 }
 
 class ProjectSuggestModal extends SuggestModal<PenseedProject> {
@@ -413,7 +448,13 @@ export default class PenseedPlugin extends Plugin {
           foreshadowings,
           entities,
           onBatchReplay: (onProgress) =>
-            this.batchReanalyze(apiUrl, token, projectId, onProgress),
+            this.batchReanalyze(
+              apiUrl,
+              token,
+              projectId,
+              result.affected_downstream_chapters,
+              onProgress
+            ),
         }).open();
         return;
       }
@@ -655,52 +696,23 @@ export default class PenseedPlugin extends Plugin {
     });
   }
 
-  private async replayChapterNote(
-    apiUrl: string,
-    token: string,
-    projectId: number,
-    note: TFile | null,
-    chapterId: number
-  ): Promise<boolean> {
-    if (!note) return false;
-    try {
-      const content = await this.app.vault.read(note);
-      const { chapter } = await createChapter(
-        apiUrl,
-        token,
-        projectId,
-        note.basename,
-        extractChapterNumber(note.basename),
-        smartWordCount(content),
-        content
-      );
-      await reanalyzeChapter(apiUrl, token, chapter.id, content);
-      return true;
-    } catch (e) {
-      console.error("[Penseed] Failed to replay chapter", e);
-      return false;
-    }
-  }
-
   private async batchReanalyze(
     apiUrl: string,
     token: string,
     projectId: number,
+    chapterIds: number[],
     onProgress: (current: number, total: number, chapterNumber: number) => void
   ): Promise<BatchReplayResult> {
-    // 1. Start the wave: freeze all currently-stale chapters. The backend
-    //    returns them already ordered by chapter_number ascending.
-    const wave = await startReanalysisWave(apiUrl, token, projectId);
-    const frozenIds = wave.frozen_chapter_ids;
-
-    // Map chapter id → chapter_number, and chapter_number → note file.
+    // Map chapter id → chapter_number + stale, and chapter_number → note file.
     const numberById = new Map<number, number>();
+    const staleById = new Map<number, boolean>();
     try {
       const chapters = await listChapters(apiUrl, token, projectId);
       for (const c of chapters) {
         if (typeof c.chapter_number === "number") {
           numberById.set(c.id, c.chapter_number);
         }
+        staleById.set(c.id, c.stale === true);
       }
     } catch (e) {
       console.error("[Penseed] Failed to list chapters for batch reanalysis", e);
@@ -712,48 +724,117 @@ export default class PenseedPlugin extends Plugin {
       if (n !== null) noteByNumber.set(n, f);
     }
 
-    // Order by chapter number ascending (backend already sorts; be explicit).
-    const ordered = frozenIds
-      .map((id) => {
-        const chapterNumber = numberById.get(id) ?? null;
-        const note =
-          chapterNumber !== null ? noteByNumber.get(chapterNumber) : undefined;
-        return { id, chapterNumber, note };
-      })
+    // 断点续跑：只提交仍 stale 的章。已处理章 stale=False，重提交被过滤掉，避免
+    // 后端总量 quota 预检把已完成章的 credits 再算一遍（stale 信息缺失时保守全量提交）。
+    const staleIds = chapterIds.filter((id) => staleById.get(id) !== false);
+
+    // Order by chapter number ascending, then read each chapter's text once and
+    // submit the whole set in a single POST. The backend runs the wave server-side
+    // (start_wave → per-chapter deferred reanalysis → end_wave) so the plugin can
+    // go offline right after — we only poll for progress.
+    const ordered = staleIds
+      .map((id) => ({ id, chapterNumber: numberById.get(id) ?? null }))
       .sort((a, b) => (a.chapterNumber ?? 0) - (b.chapterNumber ?? 0));
 
-    let replayed = 0;
-    let failed = 0;
+    const payload: ReanalysisBatchChapter[] = [];
     let skippedNoNote = 0;
-    const total = ordered.length;
-
-    for (let i = 0; i < ordered.length; i++) {
-      const { id, chapterNumber, note } = ordered[i];
-      onProgress(i + 1, total, chapterNumber ?? id);
+    for (const { id, chapterNumber } of ordered) {
+      const note =
+        chapterNumber !== null ? noteByNumber.get(chapterNumber) : undefined;
       if (!note) {
         skippedNoNote++;
         continue;
       }
-      // Reanalysis inside an active wave is deferred by the backend (the chapter
-      // is frozen), so downstream stale marks are consolidated at end_wave.
-      const ok = await this.replayChapterNote(apiUrl, token, projectId, note, id);
-      if (ok) replayed++;
-      else failed++;
+      try {
+        const content = await this.app.vault.read(note);
+        payload.push({ chapter_id: id, content });
+      } catch (e) {
+        console.error("[Penseed] Failed to read note for chapter", id, e);
+        skippedNoNote++;
+      }
     }
 
-    // 2. End the wave: consolidation returns any NEW stale chapters outside the
-    //    frozen set and whether the cascade converged.
-    let newStaleChapterIds: number[] = [];
-    let converged = true;
-    try {
-      const endResult = await endReanalysisWave(apiUrl, token, projectId);
-      newStaleChapterIds = endResult.new_stale_chapter_ids;
-      converged = endResult.converged;
-    } catch (e) {
-      console.error("[Penseed] Failed to end reanalysis wave", e);
+    if (payload.length === 0) {
+      return {
+        replayed: 0,
+        failed: 0,
+        skippedNoNote,
+        newStaleChapterIds: [],
+        converged: true,
+      };
     }
 
-    return { replayed, failed, skippedNoNote, newStaleChapterIds, converged };
+    const started = await startReanalysisBatch(apiUrl, token, projectId, payload);
+    return this.pollReanalysisBatch(
+      apiUrl,
+      token,
+      started.task_id,
+      numberById,
+      onProgress,
+      skippedNoNote
+    );
+  }
+
+  private async pollReanalysisBatch(
+    apiUrl: string,
+    token: string,
+    taskId: string,
+    numberById: Map<number, number>,
+    onProgress: (current: number, total: number, chapterNumber: number) => void,
+    skippedNoNote: number
+  ): Promise<BatchReplayResult> {
+    const POLL_INTERVAL_MS = 3000;
+    for (;;) {
+      // withRetry survives transient network blips; a 404 (task lost after server
+      // restart) is not retryable and surfaces as a clear error — the user can
+      // re-click the button, and re-submitting is idempotent (done chapters are
+      // no-ops via the content-hash short-circuit on the backend).
+      const status = await withRetry(() =>
+        getReanalysisBatchStatus(apiUrl, token, taskId)
+      );
+
+      const total = status.total ?? 0;
+      const completed = status.completed ?? 0;
+      const failed = status.failed ?? 0;
+
+      if (status.status === "completed") {
+        const result = status.result ?? {
+          converged: true,
+          new_stale_chapter_ids: [],
+          wave_seq: null,
+          max_waves_reached: false,
+        };
+        return {
+          replayed: completed,
+          failed,
+          skippedNoNote,
+          newStaleChapterIds: result.new_stale_chapter_ids ?? [],
+          converged: result.converged ?? true,
+        };
+      }
+
+      if (status.status === "error") {
+        throw new ApiError(status.error || "Batch re-analysis failed.");
+      }
+
+      if (status.status === "cancelled") {
+        return {
+          replayed: completed,
+          failed,
+          skippedNoNote,
+          newStaleChapterIds: [],
+          converged: false,
+        };
+      }
+
+      // Still analyzing: report the chapter currently being processed.
+      const current = completed + 1;
+      const currentId = status.current_chapter;
+      const chapterNumber =
+        currentId != null ? (numberById.get(currentId) ?? currentId) : 0;
+      onProgress(Math.min(current, total || current), total, chapterNumber);
+      await sleep(POLL_INTERVAL_MS);
+    }
   }
 
   private async reassignFolderProject(): Promise<void> {
