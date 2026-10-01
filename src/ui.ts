@@ -215,9 +215,10 @@ export class ReanalysisResultModal extends Modal {
       contentEl.createEl("h3", { text: "Elements" });
       const entList = contentEl.createEl("ul");
       entList.addClass("penseed-item-list");
+      entList.addClass("penseed-item-list-horizontal");
       for (const e of this.summary.entities) {
         const li = entList.createEl("li");
-        li.addClass("penseed-item-row");
+        li.addClass("penseed-item-pill");
         li.createSpan({ text: e.name });
         if (e.type) {
           li.createSpan({ text: e.type, cls: "penseed-status-tag" });

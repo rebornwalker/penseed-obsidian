@@ -89,6 +89,25 @@
   color: var(--text-muted);
 }
 
+.penseed-result .penseed-item-list-horizontal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4em;
+  align-items: center;
+}
+
+.penseed-result .penseed-item-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.15em 0.6em;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  font-size: 0.85em;
+  line-height: 1.4;
+}
+
 /* ---- Foreshadowing board (Phase 0.13) ---- */
 
 .penseed-board {
@@ -334,6 +353,8 @@
 
 .penseed-review-summary {
   flex-shrink: 0;
+  max-height: 40vh;
+  overflow-y: auto;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   padding: 0.6em 0.8em;
