@@ -36,12 +36,6 @@
   opacity: 0.6;
 }
 
-.penseed-result .penseed-batch-status {
-  margin-top: 0.4em;
-  font-size: 0.9em;
-  color: var(--text-muted);
-}
-
 .penseed-result .penseed-manage-notice {
   margin-top: 1em;
   padding: 0.6em 0.8em;
@@ -607,4 +601,23 @@ body.penseed-resizing {
   display: flex;
   align-items: center;
   color: var(--color-orange, #f0a030);
+}
+
+/* ---- Batch re-analysis progress indicator (status bar) ---- */
+
+.penseed-batch-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+
+.penseed-batch-status:hover {
+  color: var(--text-normal);
+}
+
+.penseed-batch-status .penseed-batch-status-icon {
+  display: flex;
+  align-items: center;
 }

@@ -20,6 +20,7 @@ import {
   saveEntities,
   analyzeChapterResolution,
   updateForeshadowingStatus,
+  cancelReanalysisBatch,
   PenseedProject,
   PenseedChapter,
   ForeshadowingSavePayload,
@@ -28,8 +29,9 @@ import {
 import {
   ReanalysisResultModal,
   ConfirmReanalysisModal,
+  BatchProgressModal,
   ReplayItem,
-  BatchReplayResult,
+  ReanalysisBatchTaskState,
   ReanalysisTarget,
   ReanalysisDecision,
   WEB_BASE_URL,
@@ -202,6 +204,8 @@ class ProjectSuggestModal extends SuggestModal<PenseedProject> {
 export default class PenseedPlugin extends Plugin {
   settings!: PenseedSettings;
   auth!: PenseedAuthManager;
+  private batchTask: ReanalysisBatchTaskState | null = null;
+  private batchStatusItem: HTMLElement | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -261,6 +265,21 @@ export default class PenseedPlugin extends Plugin {
         "_blank"
       );
     });
+
+    // Batch re-analysis progress indicator: hidden until a task starts, then
+    // shows "重分析 N/M" and re-opens the live progress modal on click.
+    this.batchStatusItem = this.addStatusBarItem();
+    this.batchStatusItem.addClass("penseed-batch-status");
+    this.batchStatusItem.hide();
+    this.batchStatusItem.addEventListener("click", () => {
+      this.openBatchProgressModal();
+    });
+  }
+
+  async onunload(): Promise<void> {
+    // Stop the background poll loop from touching a disposed plugin.
+    this.batchTask = null;
+    this.batchStatusItem = null;
   }
 
   async activateBoardView(): Promise<void> {
@@ -447,13 +466,12 @@ export default class PenseedPlugin extends Plugin {
           unchanged: result.noop === true,
           foreshadowings,
           entities,
-          onBatchReplay: (onProgress) =>
+          onBatchReplay: () =>
             this.batchReanalyze(
               apiUrl,
               token,
               projectId,
-              result.affected_downstream_chapters,
-              onProgress
+              result.affected_downstream_chapters
             ),
         }).open();
         return;
@@ -700,9 +718,15 @@ export default class PenseedPlugin extends Plugin {
     apiUrl: string,
     token: string,
     projectId: number,
-    chapterIds: number[],
-    onProgress: (current: number, total: number, chapterNumber: number) => void
-  ): Promise<BatchReplayResult> {
+    chapterIds: number[]
+  ): Promise<void> {
+    // 重复触发防护：已有进行中的批处理任务时，不重复提交，直接打开进度浮窗。
+    if (this.batchTask?.status === "running") {
+      new Notice("A batch re-analysis is already running.");
+      this.openBatchProgressModal();
+      return;
+    }
+
     // Map chapter id → chapter_number + stale, and chapter_number → note file.
     const numberById = new Map<number, number>();
     const staleById = new Map<number, boolean>();
@@ -755,86 +779,187 @@ export default class PenseedPlugin extends Plugin {
     }
 
     if (payload.length === 0) {
-      return {
-        replayed: 0,
-        failed: 0,
-        skippedNoNote,
-        newStaleChapterIds: [],
-        converged: true,
-      };
+      new Notice(
+        "No chapters to re-analyze (all up to date, or local notes not found)."
+      );
+      return;
     }
 
     const started = await startReanalysisBatch(apiUrl, token, projectId, payload);
-    return this.pollReanalysisBatch(
-      apiUrl,
-      token,
-      started.task_id,
+
+    this.batchTask = {
+      taskId: started.task_id,
+      projectId,
+      total: started.total ?? payload.length,
+      completed: 0,
+      failed: 0,
+      currentChapterId: null,
+      status: "running",
+      error: null,
+      converged: null,
+      newStaleChapterIds: [],
+      skippedNoNote,
       numberById,
-      onProgress,
-      skippedNoNote
+    };
+
+    this.renderBatchStatus();
+    new Notice(
+      "Batch re-analysis submitted. It runs in the background — check the status bar for progress."
     );
+    void this.pollBatchTaskInBackground();
   }
 
-  private async pollReanalysisBatch(
-    apiUrl: string,
-    token: string,
-    taskId: string,
-    numberById: Map<number, number>,
-    onProgress: (current: number, total: number, chapterNumber: number) => void,
-    skippedNoNote: number
-  ): Promise<BatchReplayResult> {
-    const POLL_INTERVAL_MS = 3000;
-    for (;;) {
-      // withRetry survives transient network blips; a 404 (task lost after server
-      // restart) is not retryable and surfaces as a clear error — the user can
-      // re-click the button, and re-submitting is idempotent (done chapters are
-      // no-ops via the content-hash short-circuit on the backend).
-      const status = await withRetry(() =>
-        getReanalysisBatchStatus(apiUrl, token, taskId)
-      );
+  private async pollBatchTaskInBackground(): Promise<void> {
+    const task = this.batchTask;
+    if (!task) return;
 
-      const total = status.total ?? 0;
-      const completed = status.completed ?? 0;
-      const failed = status.failed ?? 0;
-
-      if (status.status === "completed") {
-        const result = status.result ?? {
-          converged: true,
-          new_stale_chapter_ids: [],
-          wave_seq: null,
-          max_waves_reached: false,
-        };
-        return {
-          replayed: completed,
-          failed,
-          skippedNoNote,
-          newStaleChapterIds: result.new_stale_chapter_ids ?? [],
-          converged: result.converged ?? true,
-        };
-      }
-
-      if (status.status === "error") {
-        throw new ApiError(status.error || "Batch re-analysis failed.");
-      }
-
-      if (status.status === "cancelled") {
-        return {
-          replayed: completed,
-          failed,
-          skippedNoNote,
-          newStaleChapterIds: [],
-          converged: false,
-        };
-      }
-
-      // Still analyzing: report the chapter currently being processed.
-      const current = completed + 1;
-      const currentId = status.current_chapter;
-      const chapterNumber =
-        currentId != null ? (numberById.get(currentId) ?? currentId) : 0;
-      onProgress(Math.min(current, total || current), total, chapterNumber);
-      await sleep(POLL_INTERVAL_MS);
+    const apiUrl = this.settings.apiUrl;
+    const token = await this.auth.getAccessToken();
+    if (!token) {
+      task.status = "error";
+      task.error = "Penseed authentication lost. Reconnect in Settings.";
+      this.renderBatchStatus();
+      this.notifyBatchFinished(task);
+      return;
     }
+
+    while (this.batchTask === task && task.status === "running") {
+      try {
+        const status = await withRetry(() =>
+          getReanalysisBatchStatus(apiUrl, token, task.taskId)
+        );
+
+        task.total = status.total ?? task.total;
+        task.completed = status.completed ?? 0;
+        task.failed = status.failed ?? 0;
+        task.currentChapterId = status.current_chapter ?? null;
+
+        if (status.status === "completed") {
+          const result = status.result ?? {
+            converged: true,
+            new_stale_chapter_ids: [],
+            wave_seq: null,
+            max_waves_reached: false,
+          };
+          task.status = "completed";
+          task.converged = result.converged ?? true;
+          task.newStaleChapterIds = result.new_stale_chapter_ids ?? [];
+          break;
+        }
+        if (status.status === "error") {
+          task.status = "error";
+          task.error = status.error || "Batch re-analysis failed.";
+          break;
+        }
+        if (status.status === "cancelled") {
+          task.status = "cancelled";
+          break;
+        }
+      } catch (e) {
+        // Non-retryable (4xx/402/429) or retries exhausted. Surface and stop.
+        task.status = "error";
+        task.error =
+          e instanceof ApiError ? e.userMessage : "Batch re-analysis failed.";
+        console.error("[Penseed] Batch re-analysis poll failed", e);
+        break;
+      }
+
+      this.renderBatchStatus();
+      await sleep(3000);
+    }
+
+    // Plugin unloaded mid-poll: the task was detached; do not touch the UI.
+    if (this.batchTask !== task) return;
+
+    this.renderBatchStatus();
+    this.notifyBatchFinished(task);
+  }
+
+  private renderBatchStatus(): void {
+    if (!this.batchStatusItem) return;
+    const task = this.batchTask;
+    if (!task) {
+      this.batchStatusItem.hide();
+      return;
+    }
+
+    this.batchStatusItem.empty();
+    this.batchStatusItem.show();
+
+    const icon = this.batchStatusItem.createSpan({
+      cls: "penseed-batch-status-icon",
+    });
+
+    if (task.status === "running") {
+      setIcon(icon, "loader");
+      const total = task.total || 0;
+      const completed = task.completed || 0;
+      this.batchStatusItem.createSpan({
+        text: `重分析 ${completed}/${total}`,
+      });
+      this.batchStatusItem.setAttribute(
+        "title",
+        "Batch re-analysis in progress — click for details"
+      );
+    } else if (task.status === "completed") {
+      setIcon(icon, "check-circle");
+      this.batchStatusItem.createSpan({
+        text: `重分析完成 ${task.completed} 章`,
+      });
+      this.batchStatusItem.setAttribute(
+        "title",
+        "Batch re-analysis complete — click for results"
+      );
+    } else if (task.status === "error") {
+      setIcon(icon, "alert-circle");
+      this.batchStatusItem.createSpan({ text: "重分析失败" });
+      this.batchStatusItem.setAttribute(
+        "title",
+        task.error || "Batch re-analysis failed"
+      );
+    } else {
+      setIcon(icon, "ban");
+      this.batchStatusItem.createSpan({ text: "重分析已取消" });
+    }
+  }
+
+  private notifyBatchFinished(task: ReanalysisBatchTaskState): void {
+    if (task.status === "completed") {
+      const parts: string[] = [`重分析完成 ${task.completed} 章`];
+      if (task.skippedNoNote > 0) {
+        parts.push(`${task.skippedNoNote} 跳过（无本地笔记）`);
+      }
+      if (task.failed > 0) {
+        parts.push(`${task.failed} 失败`);
+      }
+      new Notice(parts.join("，") + "。");
+    } else if (task.status === "error") {
+      new Notice(task.error || "批量重分析失败。");
+    } else if (task.status === "cancelled") {
+      new Notice("批量重分析已取消。");
+    }
+  }
+
+  private openBatchProgressModal(): void {
+    if (!this.batchTask) {
+      new Notice("No batch re-analysis task in progress.");
+      return;
+    }
+    new BatchProgressModal(
+      this.app,
+      () => this.batchTask,
+      async () => {
+        const task = this.batchTask;
+        if (!task || task.status !== "running") return;
+        const token = await this.auth.getAccessToken();
+        if (!token) return;
+        try {
+          await cancelReanalysisBatch(this.settings.apiUrl, token, task.taskId);
+        } catch (e) {
+          this.notifyError(e);
+        }
+      }
+    ).open();
   }
 
   private async reassignFolderProject(): Promise<void> {

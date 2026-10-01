@@ -1,4 +1,4 @@
-import { App, Modal } from "obsidian";
+import { App, Modal, Notice } from "obsidian";
 import { ApiError } from "./api";
 
 export interface ReplayItem {
@@ -6,12 +6,19 @@ export interface ReplayItem {
   noteTitle: string | null;
 }
 
-export interface BatchReplayResult {
-  replayed: number;
+export interface ReanalysisBatchTaskState {
+  taskId: string;
+  projectId: number;
+  total: number;
+  completed: number;
   failed: number;
-  skippedNoNote: number;
+  currentChapterId: number | null;
+  status: "running" | "completed" | "error" | "cancelled";
+  error: string | null;
+  converged: boolean | null;
   newStaleChapterIds: number[];
-  converged: boolean;
+  skippedNoNote: number;
+  numberById: Map<number, number>;
 }
 
 export interface ForeshadowingSummaryItem {
@@ -40,9 +47,7 @@ export interface ReanalysisSummary {
   unchanged?: boolean;
   foreshadowings: ForeshadowingSummaryItem[];
   entities: EntitySummaryItem[];
-  onBatchReplay?: (
-    onProgress: (current: number, total: number, chapterNumber: number) => void
-  ) => Promise<BatchReplayResult>;
+  onBatchReplay?: () => Promise<void>;
 }
 
 export const WEB_BASE_URL = "https://penseed.app";
@@ -51,8 +56,57 @@ function plural(n: number): string {
   return n === 1 ? "" : "s";
 }
 
+/**
+ * Install a draggable resize handle on the bottom-right corner of a modal.
+ * Returns a cleanup function to call in onClose. Mirrors AnalysisReviewModal's
+ * resize behaviour so every Penseed modal is resizable the same way.
+ */
+function installModalResize(modal: Modal): () => void {
+  const modalEl = modal.modalEl;
+  const handle = modalEl.createDiv({ cls: "penseed-resize-handle" });
+
+  let startX = 0;
+  let startY = 0;
+  let startWidth = 0;
+  let startHeight = 0;
+
+  const onMove = (ev: MouseEvent): void => {
+    const width = Math.min(
+      window.innerWidth - 16,
+      Math.max(360, startWidth + (ev.clientX - startX))
+    );
+    const height = Math.min(
+      window.innerHeight - 16,
+      Math.max(280, startHeight + (ev.clientY - startY))
+    );
+    modalEl.style.width = `${width}px`;
+    modalEl.style.height = `${height}px`;
+  };
+
+  const stop = (): void => {
+    document.body.classList.remove("penseed-resizing");
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", stop);
+  };
+
+  handle.addEventListener("mousedown", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    startX = ev.clientX;
+    startY = ev.clientY;
+    startWidth = modalEl.offsetWidth;
+    startHeight = modalEl.offsetHeight;
+    document.body.classList.add("penseed-resizing");
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", stop);
+  });
+
+  return stop;
+}
+
 export class ReanalysisResultModal extends Modal {
   private summary: ReanalysisSummary;
+  private resizeCleanup: (() => void) | null = null;
 
   constructor(app: App, summary: ReanalysisSummary) {
     super(app);
@@ -63,6 +117,7 @@ export class ReanalysisResultModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("penseed-result");
+    this.resizeCleanup = installModalResize(this);
 
     contentEl.createEl("h2", {
       text: this.summary.isFirstAnalysis
@@ -222,27 +277,19 @@ export class ReanalysisResultModal extends Modal {
     button.addClass("mod-cta");
     button.addClass("penseed-batch-button");
 
-    const status = container.createDiv({ cls: "penseed-batch-status" });
-
     button.addEventListener("click", () => {
       void (async () => {
         button.disabled = true;
-        status.setText("Starting batch re-analysis…");
+        button.setText("Submitting…");
         try {
-          const result = await this.summary.onBatchReplay!(
-            (current, total, chapterNumber) => {
-              button.setText(
-                `Re-analyzing ${current}/${total} (chapter ${chapterNumber})…`
-              );
-              status.setText(`Re-analyzing chapter ${chapterNumber}…`);
-            }
-          );
-          button.remove();
-          status.setText(this.formatBatchResult(result));
+          await this.summary.onBatchReplay!();
+          // The backend now runs the wave. Close this modal; progress moves to
+          // the status bar, and clicking it re-opens a live progress view.
+          this.close();
         } catch (e) {
           button.disabled = false;
           button.setText("Batch re-analyze failed — retry");
-          status.setText(
+          new Notice(
             e instanceof ApiError
               ? e.userMessage
               : "Batch re-analysis failed. Check the Penseed web app for details."
@@ -253,31 +300,115 @@ export class ReanalysisResultModal extends Modal {
     });
   }
 
-  private formatBatchResult(result: BatchReplayResult): string {
-    const parts: string[] = [];
-    parts.push(
-      `${result.replayed} chapter${plural(result.replayed)} re-analyzed`
-    );
-    if (result.skippedNoNote > 0) {
-      parts.push(
-        `${result.skippedNoNote} skipped (no local note)`
-      );
-    }
-    if (result.failed > 0) {
-      parts.push(`${result.failed} failed`);
-    }
-    let text = parts.join(", ") + ".";
-    if (result.newStaleChapterIds.length > 0) {
-      text += ` ${result.newStaleChapterIds.length} more chapter${plural(
-        result.newStaleChapterIds.length
-      )} now out of date — open Penseed to continue.`;
-    }
-    return text;
+  onClose(): void {
+    this.resizeCleanup?.();
+    this.resizeCleanup = null;
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+/**
+ * Live progress / result view for a background batch-reanalysis task. Subscribes
+ * to the plugin's task state via getState and refreshes on an interval, so the
+ * author can close and reopen it without interrupting the backend task.
+ */
+export class BatchProgressModal extends Modal {
+  private getState: () => ReanalysisBatchTaskState | null;
+  private onCancel: (() => Promise<void>) | null;
+  private interval: number | null = null;
+  private resizeCleanup: (() => void) | null = null;
+
+  constructor(
+    app: App,
+    getState: () => ReanalysisBatchTaskState | null,
+    onCancel: (() => Promise<void>) | null = null
+  ) {
+    super(app);
+    this.getState = getState;
+    this.onCancel = onCancel;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("penseed-result");
+    this.resizeCleanup = installModalResize(this);
+    this.render();
+    this.interval = window.setInterval(() => this.render(), 1500);
   }
 
   onClose(): void {
+    if (this.interval !== null) {
+      window.clearInterval(this.interval);
+      this.interval = null;
+    }
+    this.resizeCleanup?.();
+    this.resizeCleanup = null;
     const { contentEl } = this;
     contentEl.empty();
+  }
+
+  private render(): void {
+    const state = this.getState();
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.createEl("h2", { text: "Batch Re-analysis" });
+
+    if (!state) {
+      contentEl.createDiv({ text: "No batch re-analysis task in progress." });
+      return;
+    }
+
+    if (state.status === "running") {
+      const total = state.total || 0;
+      const completed = state.completed || 0;
+      contentEl.createDiv({
+        text: `Re-analyzing ${completed}/${total}${
+          state.failed > 0 ? ` — ${state.failed} failed` : ""
+        }`,
+      });
+      if (state.currentChapterId != null) {
+        const chapterNumber = state.numberById.get(state.currentChapterId);
+        contentEl.createDiv({
+          text:
+            chapterNumber != null
+              ? `Current chapter: ${chapterNumber}`
+              : `Current chapter id: ${state.currentChapterId}`,
+        });
+      }
+      if (this.onCancel) {
+        const cancel = contentEl.createEl("button", { text: "Cancel" });
+        cancel.addClass("penseed-batch-button");
+        cancel.addEventListener("click", () => {
+          void this.onCancel!();
+        });
+      }
+    } else if (state.status === "completed") {
+      const parts: string[] = [
+        `${state.completed} chapter${plural(state.completed)} re-analyzed`,
+      ];
+      if (state.skippedNoNote > 0) {
+        parts.push(`${state.skippedNoNote} skipped (no local note)`);
+      }
+      if (state.failed > 0) {
+        parts.push(`${state.failed} failed`);
+      }
+      contentEl.createDiv({ text: parts.join(", ") + "." });
+      if (state.converged === false && state.newStaleChapterIds.length > 0) {
+        contentEl.createDiv({
+          text: `${state.newStaleChapterIds.length} more chapter${plural(
+            state.newStaleChapterIds.length
+          )} now out of date — open Penseed to continue.`,
+        });
+      }
+    } else if (state.status === "error") {
+      contentEl.createDiv({
+        text: state.error || "Batch re-analysis failed.",
+      });
+    } else {
+      contentEl.createDiv({ text: "Batch re-analysis cancelled." });
+    }
   }
 }
 
