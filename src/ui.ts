@@ -43,10 +43,14 @@ export interface ReanalysisSummary {
   estimatedReplayCredits: number;
   projectId: number;
   affected: ReplayItem[];
+  affectedCount?: number;
+  affectedListUnavailable?: boolean;
   isFirstAnalysis: boolean;
   unchanged?: boolean;
   foreshadowings: ForeshadowingSummaryItem[];
   entities: EntitySummaryItem[];
+  foreshadowingsError?: boolean;
+  entitiesError?: boolean;
   onBatchReplay?: () => Promise<void>;
 }
 
@@ -197,6 +201,13 @@ export class ReanalysisResultModal extends Modal {
       manageNotice.addClass("penseed-manage-notice");
     }
 
+    if (this.summary.foreshadowingsError) {
+      const hint = contentEl.createDiv({
+        text: "Couldn't load this chapter's foreshadowings. Open the web app to review them.",
+      });
+      hint.addClass("penseed-manage-notice");
+    }
+
     if (this.summary.foreshadowings.length > 0) {
       contentEl.createEl("h3", { text: "Foreshadowings" });
       const fsList = contentEl.createEl("ul");
@@ -209,6 +220,13 @@ export class ReanalysisResultModal extends Modal {
           li.createSpan({ text: f.status, cls: "penseed-status-tag" });
         }
       }
+    }
+
+    if (this.summary.entitiesError) {
+      const hint = contentEl.createDiv({
+        text: "Couldn't load this chapter's elements. Open the web app to review them.",
+      });
+      hint.addClass("penseed-manage-notice");
     }
 
     if (this.summary.entities.length > 0) {
@@ -226,11 +244,13 @@ export class ReanalysisResultModal extends Modal {
       }
     }
 
-    if (this.summary.affected.length > 0) {
+    const affectedCount =
+      this.summary.affectedCount ?? this.summary.affected.length;
+    if (affectedCount > 0) {
       contentEl
         .createDiv({
-          text: `${this.summary.affected.length} downstream chapter${plural(
-            this.summary.affected.length
+          text: `${affectedCount} downstream chapter${plural(
+            affectedCount
           )} affected`,
         })
         .addClass("penseed-cta-label");
@@ -245,15 +265,19 @@ export class ReanalysisResultModal extends Modal {
       // deliberately removed: re-analyzing a single stale chapter out of order
       // corrupts downstream state (cascade/butterfly effect). The only action is
       // one batch button that re-analyzes the whole set in chapter order.
-      const list = contentEl.createEl("ul");
-      list.addClass("penseed-item-list");
-      for (const item of this.summary.affected) {
-        const li = list.createEl("li");
-        li.addClass("penseed-item-row");
-        const label = item.noteTitle
-          ? `Chapter ${item.chapterNumber} — ${item.noteTitle}`
-          : `Chapter ${item.chapterNumber} — note not found`;
-        li.createSpan({ text: label });
+      // When the chapter-number mapping couldn't be fetched, we degrade to a
+      // count-only summary rather than showing misleading raw ids.
+      if (!this.summary.affectedListUnavailable) {
+        const list = contentEl.createEl("ul");
+        list.addClass("penseed-item-list");
+        for (const item of this.summary.affected) {
+          const li = list.createEl("li");
+          li.addClass("penseed-item-row");
+          const label = item.noteTitle
+            ? `Chapter ${item.chapterNumber} — ${item.noteTitle}`
+            : `Chapter ${item.chapterNumber} — note not found`;
+          li.createSpan({ text: label });
+        }
       }
 
       if (this.summary.onBatchReplay) {

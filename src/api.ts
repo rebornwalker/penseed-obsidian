@@ -228,6 +228,62 @@ export async function reanalyzeChapter(
   );
 }
 
+export interface StartSingleReanalysisResult {
+  task_id: string;
+  status: string;
+  total: number;
+}
+
+/**
+ * Phase 0.20: submit a single-chapter reanalysis as a background task. Returns
+ * 202 with a task_id; poll `getSingleReanalysisStatus` until completed, then
+ * read the full diff from `result`.
+ */
+export async function startSingleReanalysis(
+  apiUrl: string,
+  token: string,
+  chapterId: number,
+  content: string
+): Promise<StartSingleReanalysisResult> {
+  return request<StartSingleReanalysisResult>(
+    apiUrl,
+    token,
+    `/api/chapters/${chapterId}/reanalyze-async`,
+    "POST",
+    { content }
+  );
+}
+
+export interface SingleReanalysisStatus {
+  task_id: string;
+  status: string;
+  total: number;
+  completed: number;
+  failed: number;
+  current_chapter: number | null;
+  error: string | null;
+  result?: ReanalyzeResult | null;
+  [key: string]: unknown;
+}
+
+/**
+ * Phase 0.20: poll a single-chapter reanalysis task. Shares the backend status
+ * endpoint with the batch task (the registry is generic); only the result shape
+ * differs (full reanalyze diff vs. wave result).
+ */
+export async function getSingleReanalysisStatus(
+  apiUrl: string,
+  token: string,
+  taskId: string
+): Promise<SingleReanalysisStatus> {
+  return request<SingleReanalysisStatus>(
+    apiUrl,
+    token,
+    `/api/chapters/reanalysis-batch/${taskId}/status`,
+    "GET"
+  );
+}
+
 export interface StartWaveResult {
   wave_id: number;
   wave_seq: number;

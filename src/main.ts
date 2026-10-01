@@ -11,7 +11,8 @@ import {
   listChapters,
   listEntities,
   listForeshadowings,
-  reanalyzeChapter,
+  startSingleReanalysis,
+  getSingleReanalysisStatus,
   startReanalysisBatch,
   getReanalysisBatchStatus,
   extractForeshadowing,
@@ -25,6 +26,7 @@ import {
   PenseedChapter,
   ForeshadowingSavePayload,
   ReanalysisBatchChapter,
+  ReanalyzeResult,
 } from "./api";
 import {
   ReanalysisResultModal,
@@ -201,10 +203,20 @@ class ProjectSuggestModal extends SuggestModal<PenseedProject> {
   }
 }
 
+interface SingleReanalysisTaskState {
+  taskId: string;
+  projectId: number;
+  chapterId: number;
+  status: "running" | "completed" | "error" | "cancelled";
+  error: string | null;
+  result: ReanalyzeResult | null;
+}
+
 export default class PenseedPlugin extends Plugin {
   settings!: PenseedSettings;
   auth!: PenseedAuthManager;
   private batchTask: ReanalysisBatchTaskState | null = null;
+  private singleTask: SingleReanalysisTaskState | null = null;
   private batchStatusItem: HTMLElement | null = null;
 
   async onload(): Promise<void> {
@@ -272,13 +284,18 @@ export default class PenseedPlugin extends Plugin {
     this.batchStatusItem.addClass("penseed-batch-status");
     this.batchStatusItem.hide();
     this.batchStatusItem.addEventListener("click", () => {
-      this.openBatchProgressModal();
+      if (this.batchTask) {
+        this.openBatchProgressModal();
+      } else if (this.singleTask?.status === "running") {
+        new Notice("Single-chapter re-analysis is running in the background.");
+      }
     });
   }
 
   async onunload(): Promise<void> {
     // Stop the background poll loop from touching a disposed plugin.
     this.batchTask = null;
+    this.singleTask = null;
     this.batchStatusItem = null;
   }
 
@@ -416,64 +433,18 @@ export default class PenseedPlugin extends Plugin {
       }
 
       if (!isNew) {
-        // Historical chapter: recompute in place, auto-commit, flag downstream.
-        const result = await reanalyzeChapter(apiUrl, token, chapter.id, content);
+        // Historical chapter: recompute in place as a background task, then poll
+        // and render the result (Phase 0.20). The synchronous reanalyze request
+        // was dropped because it took tens of seconds and could time out at the
+        // plugin network layer even though the server finished the work.
         notice.hide();
-
-        const affected = await this.buildReplayItems(
+        await this.submitSingleReanalysis(
           apiUrl,
           token,
-          projectId,
-          result.affected_downstream_chapters
+          chapter,
+          content,
+          projectId
         );
-
-        // Fetch the chapter's current foreshadowings & entities so the result
-        // modal can list exactly what was extracted. Editing/removal stays on
-        // the web app (read-only here).
-        const [fsResult, entityResult] = await Promise.allSettled([
-          listForeshadowings(apiUrl, token, chapter.id, projectId),
-          listEntities(apiUrl, token, projectId, chapter.id),
-        ]);
-
-        const foreshadowings =
-          fsResult.status === "fulfilled"
-            ? (fsResult.value.items ?? []).map((f) => ({
-                text: f.foreshadowing_text_preview ?? "",
-                status: typeof f.status === "string" ? f.status : "",
-              }))
-            : [];
-        const entities =
-          entityResult.status === "fulfilled"
-            ? entityResult.value.map((e) => ({
-                name: e.display_name ?? e.canonical_name,
-                type: e.entity_type,
-              }))
-            : [];
-
-        new ReanalysisResultModal(this.app, {
-          entityCount: result.entity_count,
-          foreshadowingCount: result.foreshadowing_count,
-          addedForeshadowings: result.added_foreshadowings,
-          deletedForeshadowings: result.deleted_foreshadowings,
-          semanticChangedCount: result.semantic_changed_count,
-          resolvedCount: result.foreshadowings_resolved,
-          partiallyResolved: result.partially_resolved,
-          progressed: result.progressed,
-          estimatedReplayCredits: result.estimated_replay_credits,
-          projectId,
-          affected,
-          isFirstAnalysis: false,
-          unchanged: result.noop === true,
-          foreshadowings,
-          entities,
-          onBatchReplay: () =>
-            this.batchReanalyze(
-              apiUrl,
-              token,
-              projectId,
-              result.affected_downstream_chapters
-            ),
-        }).open();
         return;
       }
 
@@ -680,11 +651,21 @@ export default class PenseedPlugin extends Plugin {
     token: string,
     projectId: number,
     affectedChapterIds: number[]
-  ): Promise<ReplayItem[]> {
-    if (affectedChapterIds.length === 0) return [];
+  ): Promise<{
+    items: ReplayItem[];
+    count: number;
+    listChaptersFailed: boolean;
+  }> {
+    const count = affectedChapterIds.length;
+    if (count === 0) {
+      return { items: [], count: 0, listChaptersFailed: false };
+    }
 
-    // Map chapter id → chapter_number.
+    // Map chapter id → chapter_number. If this list request fails, we can't map
+    // ids to human-readable chapter numbers, so we degrade to a count-only
+    // summary instead of showing misleading raw ids (Phase 0.20-06).
     const numberById = new Map<number, number>();
+    let listChaptersFailed = false;
     try {
       const chapters = await listChapters(apiUrl, token, projectId);
       for (const c of chapters) {
@@ -693,7 +674,12 @@ export default class PenseedPlugin extends Plugin {
         }
       }
     } catch (e) {
+      listChaptersFailed = true;
       console.error("[Penseed] Failed to list chapters for replay mapping", e);
+    }
+
+    if (listChaptersFailed) {
+      return { items: [], count, listChaptersFailed: true };
     }
 
     // Map chapter_number → note file (by leading number in filename).
@@ -703,7 +689,7 @@ export default class PenseedPlugin extends Plugin {
       if (n !== null) noteByNumber.set(n, f);
     }
 
-    return affectedChapterIds.map((id) => {
+    const items = affectedChapterIds.map((id) => {
       const chapterNumber = numberById.get(id);
       const note =
         chapterNumber !== undefined ? noteByNumber.get(chapterNumber) : undefined;
@@ -712,6 +698,173 @@ export default class PenseedPlugin extends Plugin {
         noteTitle: note ? note.basename : null,
       };
     });
+
+    return { items, count, listChaptersFailed: false };
+  }
+
+  private async submitSingleReanalysis(
+    apiUrl: string,
+    token: string,
+    chapter: PenseedChapter,
+    content: string,
+    projectId: number
+  ): Promise<void> {
+    if (
+      this.singleTask?.status === "running" ||
+      this.batchTask?.status === "running"
+    ) {
+      new Notice("A re-analysis is already running. Wait for it to finish.");
+      return;
+    }
+
+    const started = await startSingleReanalysis(apiUrl, token, chapter.id, content);
+
+    this.singleTask = {
+      taskId: started.task_id,
+      projectId,
+      chapterId: chapter.id,
+      status: "running",
+      error: null,
+      result: null,
+    };
+
+    this.renderStatus();
+    new Notice(
+      "Re-analysis submitted. It runs in the background — check the status bar for progress."
+    );
+    void this.pollSingleTaskInBackground();
+  }
+
+  private async pollSingleTaskInBackground(): Promise<void> {
+    const task = this.singleTask;
+    if (!task) return;
+
+    const apiUrl = this.settings.apiUrl;
+    const token = await this.auth.getAccessToken();
+    if (!token) {
+      task.status = "error";
+      task.error = "Penseed authentication lost. Reconnect in Settings.";
+      this.renderStatus();
+      return;
+    }
+
+    while (this.singleTask === task && task.status === "running") {
+      try {
+        const status = await withRetry(() =>
+          getSingleReanalysisStatus(apiUrl, token, task.taskId)
+        );
+
+        if (status.status === "completed") {
+          task.status = "completed";
+          task.result = status.result ?? null;
+          break;
+        }
+        if (status.status === "error") {
+          task.status = "error";
+          task.error = status.error || "Re-analysis failed.";
+          break;
+        }
+        if (status.status === "cancelled") {
+          task.status = "cancelled";
+          break;
+        }
+      } catch (e) {
+        task.status = "error";
+        task.error =
+          e instanceof ApiError ? e.userMessage : "Re-analysis failed.";
+        console.error("[Penseed] Single re-analysis poll failed", e);
+        break;
+      }
+
+      this.renderStatus();
+      await sleep(3000);
+    }
+
+    // Plugin unloaded mid-poll: the task was detached; do not touch the UI.
+    if (this.singleTask !== task) return;
+
+    this.renderStatus();
+    if (task.status === "completed") {
+      await this.renderSingleReanalysisResult(task);
+    } else if (task.status === "error") {
+      new Notice(task.error || "单章重分析失败。");
+    } else if (task.status === "cancelled") {
+      new Notice("单章重分析已取消。");
+    }
+  }
+
+  private async renderSingleReanalysisResult(
+    task: SingleReanalysisTaskState
+  ): Promise<void> {
+    const result = task.result;
+    if (!result) {
+      new Notice("Re-analysis completed but returned no result.");
+      return;
+    }
+
+    const apiUrl = this.settings.apiUrl;
+    const token = await this.auth.getAccessToken();
+    if (!token) return;
+
+    const built = await this.buildReplayItems(
+      apiUrl,
+      token,
+      task.projectId,
+      result.affected_downstream_chapters
+    );
+
+    // Fetch the chapter's current foreshadowings & entities so the result modal
+    // can list exactly what was extracted. Editing/removal stays on the web app
+    // (read-only here). If a list request fails, surface a hint in the modal
+    // instead of silently dropping the section (Phase 0.20-07).
+    const [fsResult, entityResult] = await Promise.allSettled([
+      listForeshadowings(apiUrl, token, task.chapterId, task.projectId),
+      listEntities(apiUrl, token, task.projectId, task.chapterId),
+    ]);
+
+    const foreshadowings =
+      fsResult.status === "fulfilled"
+        ? (fsResult.value.items ?? []).map((f) => ({
+            text: f.foreshadowing_text_preview ?? "",
+            status: typeof f.status === "string" ? f.status : "",
+          }))
+        : [];
+    const entities =
+      entityResult.status === "fulfilled"
+        ? entityResult.value.map((e) => ({
+            name: e.display_name ?? e.canonical_name,
+            type: e.entity_type,
+          }))
+        : [];
+
+    new ReanalysisResultModal(this.app, {
+      entityCount: result.entity_count,
+      foreshadowingCount: result.foreshadowing_count,
+      addedForeshadowings: result.added_foreshadowings,
+      deletedForeshadowings: result.deleted_foreshadowings,
+      semanticChangedCount: result.semantic_changed_count,
+      resolvedCount: result.foreshadowings_resolved,
+      partiallyResolved: result.partially_resolved,
+      progressed: result.progressed,
+      estimatedReplayCredits: result.estimated_replay_credits,
+      projectId: task.projectId,
+      affected: built.items,
+      affectedCount: built.count,
+      affectedListUnavailable: built.listChaptersFailed,
+      isFirstAnalysis: false,
+      unchanged: result.noop === true,
+      foreshadowings,
+      entities,
+      foreshadowingsError: fsResult.status !== "fulfilled",
+      entitiesError: entityResult.status !== "fulfilled",
+      onBatchReplay: () =>
+        this.batchReanalyze(
+          apiUrl,
+          token,
+          task.projectId,
+          result.affected_downstream_chapters
+        ),
+    }).open();
   }
 
   private async batchReanalyze(
@@ -721,6 +874,10 @@ export default class PenseedPlugin extends Plugin {
     chapterIds: number[]
   ): Promise<void> {
     // 重复触发防护：已有进行中的批处理任务时，不重复提交，直接打开进度浮窗。
+    if (this.singleTask?.status === "running") {
+      new Notice("A single-chapter re-analysis is already running.");
+      return;
+    }
     if (this.batchTask?.status === "running") {
       new Notice("A batch re-analysis is already running.");
       this.openBatchProgressModal();
@@ -802,7 +959,7 @@ export default class PenseedPlugin extends Plugin {
       numberById,
     };
 
-    this.renderBatchStatus();
+    this.renderStatus();
     new Notice(
       "Batch re-analysis submitted. It runs in the background — check the status bar for progress."
     );
@@ -818,7 +975,7 @@ export default class PenseedPlugin extends Plugin {
     if (!token) {
       task.status = "error";
       task.error = "Penseed authentication lost. Reconnect in Settings.";
-      this.renderBatchStatus();
+      this.renderStatus();
       this.notifyBatchFinished(task);
       return;
     }
@@ -864,15 +1021,76 @@ export default class PenseedPlugin extends Plugin {
         break;
       }
 
-      this.renderBatchStatus();
+      this.renderStatus();
       await sleep(3000);
     }
 
     // Plugin unloaded mid-poll: the task was detached; do not touch the UI.
     if (this.batchTask !== task) return;
 
-    this.renderBatchStatus();
+    this.renderStatus();
     this.notifyBatchFinished(task);
+  }
+
+  private renderStatus(): void {
+    if (!this.batchStatusItem) return;
+    const single = this.singleTask;
+    const batch = this.batchTask;
+    if (single?.status === "running") {
+      this.renderSingleStatus();
+      return;
+    }
+    if (batch) {
+      this.renderBatchStatus();
+      return;
+    }
+    if (single) {
+      this.renderSingleStatus();
+      return;
+    }
+    this.batchStatusItem.hide();
+  }
+
+  private renderSingleStatus(): void {
+    if (!this.batchStatusItem) return;
+    const task = this.singleTask;
+    if (!task) {
+      this.batchStatusItem.hide();
+      return;
+    }
+
+    this.batchStatusItem.empty();
+    this.batchStatusItem.show();
+
+    const icon = this.batchStatusItem.createSpan({
+      cls: "penseed-batch-status-icon",
+    });
+
+    if (task.status === "running") {
+      setIcon(icon, "loader");
+      this.batchStatusItem.createSpan({ text: "重分析中…" });
+      this.batchStatusItem.setAttribute(
+        "title",
+        "Single-chapter re-analysis in progress"
+      );
+    } else if (task.status === "completed") {
+      setIcon(icon, "check-circle");
+      this.batchStatusItem.createSpan({ text: "重分析完成" });
+      this.batchStatusItem.setAttribute(
+        "title",
+        "Single-chapter re-analysis complete"
+      );
+    } else if (task.status === "error") {
+      setIcon(icon, "alert-circle");
+      this.batchStatusItem.createSpan({ text: "重分析失败" });
+      this.batchStatusItem.setAttribute(
+        "title",
+        task.error || "Single-chapter re-analysis failed"
+      );
+    } else {
+      setIcon(icon, "ban");
+      this.batchStatusItem.createSpan({ text: "重分析已取消" });
+    }
   }
 
   private renderBatchStatus(): void {
