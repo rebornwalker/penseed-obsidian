@@ -12,13 +12,12 @@ export interface ReanalysisBatchTaskState {
   total: number;
   completed: number;
   failed: number;
-  currentChapterId: number | null;
+  currentChapterNumber: number | null;
   status: "running" | "completed" | "error" | "cancelled";
   error: string | null;
   converged: boolean | null;
   newStaleChapterIds: number[];
   skippedNoNote: number;
-  numberById: Map<number, number>;
 }
 
 export interface ForeshadowingSummaryItem {
@@ -393,13 +392,9 @@ export class BatchProgressModal extends Modal {
           state.failed > 0 ? ` — ${state.failed} failed` : ""
         }`,
       });
-      if (state.currentChapterId != null) {
-        const chapterNumber = state.numberById.get(state.currentChapterId);
+      if (state.currentChapterNumber != null) {
         contentEl.createDiv({
-          text:
-            chapterNumber != null
-              ? `Current chapter: ${chapterNumber}`
-              : `Current chapter id: ${state.currentChapterId}`,
+          text: `Current chapter: ${state.currentChapterNumber}`,
         });
       }
       if (this.onCancel) {

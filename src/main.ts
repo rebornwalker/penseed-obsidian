@@ -279,7 +279,7 @@ export default class PenseedPlugin extends Plugin {
     });
 
     // Batch re-analysis progress indicator: hidden until a task starts, then
-    // shows "重分析 N/M" and re-opens the live progress modal on click.
+    // shows "Re-analyzing N/M" and re-opens the live progress modal on click.
     this.batchStatusItem = this.addStatusBarItem();
     this.batchStatusItem.addClass("penseed-batch-status");
     this.batchStatusItem.hide();
@@ -787,9 +787,9 @@ export default class PenseedPlugin extends Plugin {
     if (task.status === "completed") {
       await this.renderSingleReanalysisResult(task);
     } else if (task.status === "error") {
-      new Notice(task.error || "单章重分析失败。");
+      new Notice(task.error || "Single-chapter re-analysis failed.");
     } else if (task.status === "cancelled") {
-      new Notice("单章重分析已取消。");
+      new Notice("Single-chapter re-analysis cancelled.");
     }
   }
 
@@ -905,8 +905,10 @@ export default class PenseedPlugin extends Plugin {
       if (n !== null) noteByNumber.set(n, f);
     }
 
-    // 断点续跑：只提交仍 stale 的章。已处理章 stale=False，重提交被过滤掉，避免
-    // 后端总量 quota 预检把已完成章的 credits 再算一遍（stale 信息缺失时保守全量提交）。
+    // Resume-only: submit chapters that are still stale. Already-processed
+    // chapters have stale=False and are filtered out, so the backend's total
+    // quota precheck doesn't double-count their credits (when stale info is
+    // missing we conservatively submit the full set).
     const staleIds = chapterIds.filter((id) => staleById.get(id) !== false);
 
     // Order by chapter number ascending, then read each chapter's text once and
@@ -950,13 +952,12 @@ export default class PenseedPlugin extends Plugin {
       total: started.total ?? payload.length,
       completed: 0,
       failed: 0,
-      currentChapterId: null,
+      currentChapterNumber: null,
       status: "running",
       error: null,
       converged: null,
       newStaleChapterIds: [],
       skippedNoNote,
-      numberById,
     };
 
     this.renderStatus();
@@ -989,7 +990,7 @@ export default class PenseedPlugin extends Plugin {
         task.total = status.total ?? task.total;
         task.completed = status.completed ?? 0;
         task.failed = status.failed ?? 0;
-        task.currentChapterId = status.current_chapter ?? null;
+        task.currentChapterNumber = status.current_chapter ?? null;
 
         if (status.status === "completed") {
           const result = status.result ?? {
@@ -1068,28 +1069,28 @@ export default class PenseedPlugin extends Plugin {
 
     if (task.status === "running") {
       setIcon(icon, "loader");
-      this.batchStatusItem.createSpan({ text: "重分析中…" });
+      this.batchStatusItem.createSpan({ text: "Re-analyzing…" });
       this.batchStatusItem.setAttribute(
         "title",
         "Single-chapter re-analysis in progress"
       );
     } else if (task.status === "completed") {
       setIcon(icon, "check-circle");
-      this.batchStatusItem.createSpan({ text: "重分析完成" });
+      this.batchStatusItem.createSpan({ text: "Re-analysis complete" });
       this.batchStatusItem.setAttribute(
         "title",
         "Single-chapter re-analysis complete"
       );
     } else if (task.status === "error") {
       setIcon(icon, "alert-circle");
-      this.batchStatusItem.createSpan({ text: "重分析失败" });
+      this.batchStatusItem.createSpan({ text: "Re-analysis failed" });
       this.batchStatusItem.setAttribute(
         "title",
         task.error || "Single-chapter re-analysis failed"
       );
     } else {
       setIcon(icon, "ban");
-      this.batchStatusItem.createSpan({ text: "重分析已取消" });
+      this.batchStatusItem.createSpan({ text: "Re-analysis cancelled" });
     }
   }
 
@@ -1113,7 +1114,7 @@ export default class PenseedPlugin extends Plugin {
       const total = task.total || 0;
       const completed = task.completed || 0;
       this.batchStatusItem.createSpan({
-        text: `重分析 ${completed}/${total}`,
+        text: `Re-analyzing ${completed}/${total}`,
       });
       this.batchStatusItem.setAttribute(
         "title",
@@ -1122,7 +1123,7 @@ export default class PenseedPlugin extends Plugin {
     } else if (task.status === "completed") {
       setIcon(icon, "check-circle");
       this.batchStatusItem.createSpan({
-        text: `重分析完成 ${task.completed} 章`,
+        text: `Re-analysis done: ${task.completed} chapters`,
       });
       this.batchStatusItem.setAttribute(
         "title",
@@ -1130,31 +1131,31 @@ export default class PenseedPlugin extends Plugin {
       );
     } else if (task.status === "error") {
       setIcon(icon, "alert-circle");
-      this.batchStatusItem.createSpan({ text: "重分析失败" });
+      this.batchStatusItem.createSpan({ text: "Re-analysis failed" });
       this.batchStatusItem.setAttribute(
         "title",
         task.error || "Batch re-analysis failed"
       );
     } else {
       setIcon(icon, "ban");
-      this.batchStatusItem.createSpan({ text: "重分析已取消" });
+      this.batchStatusItem.createSpan({ text: "Re-analysis cancelled" });
     }
   }
 
   private notifyBatchFinished(task: ReanalysisBatchTaskState): void {
     if (task.status === "completed") {
-      const parts: string[] = [`重分析完成 ${task.completed} 章`];
+      const parts: string[] = [`Re-analysis done: ${task.completed} chapters`];
       if (task.skippedNoNote > 0) {
-        parts.push(`${task.skippedNoNote} 跳过（无本地笔记）`);
+        parts.push(`${task.skippedNoNote} skipped (no local note)`);
       }
       if (task.failed > 0) {
-        parts.push(`${task.failed} 失败`);
+        parts.push(`${task.failed} failed`);
       }
-      new Notice(parts.join("，") + "。");
+      new Notice(parts.join(", ") + ".");
     } else if (task.status === "error") {
-      new Notice(task.error || "批量重分析失败。");
+      new Notice(task.error || "Batch re-analysis failed.");
     } else if (task.status === "cancelled") {
-      new Notice("批量重分析已取消。");
+      new Notice("Batch re-analysis cancelled.");
     }
   }
 
