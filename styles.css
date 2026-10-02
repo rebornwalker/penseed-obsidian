@@ -643,7 +643,7 @@ body.penseed-resizing {
   align-items: center;
 }
 
-/* ---- Reanalysis result modal: fill height + growable lists ---- */
+/* ---- Reanalysis result modal: fixed lists until resized, then grow ---- */
 
 .penseed-result-modal {
   position: relative;
@@ -651,8 +651,12 @@ body.penseed-resizing {
   flex-direction: column;
   width: min(560px, 92vw);
   max-width: none;
-  max-height: none;
+  max-height: 80vh;
   overflow: hidden;
+}
+
+.penseed-result-modal.penseed-user-resized {
+  max-height: none;
 }
 
 .penseed-result-modal .penseed-result {
@@ -664,6 +668,11 @@ body.penseed-resizing {
 }
 
 .penseed-result-modal .penseed-grow {
+  flex: 0 1 auto;
+  max-height: 12em;
+}
+
+.penseed-result-modal.penseed-user-resized .penseed-grow {
   flex: 1 1 auto;
   min-height: 3em;
   max-height: none;

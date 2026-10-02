@@ -99,6 +99,7 @@ function installModalResize(modal: Modal): () => void {
     startY = ev.clientY;
     startWidth = modalEl.offsetWidth;
     startHeight = modalEl.offsetHeight;
+    modalEl.addClass("penseed-user-resized");
     document.body.classList.add("penseed-resizing");
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", stop);
