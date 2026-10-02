@@ -642,3 +642,29 @@ body.penseed-resizing {
   display: flex;
   align-items: center;
 }
+
+/* ---- Reanalysis result modal: fill height + growable lists ---- */
+
+.penseed-result-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 92vw);
+  max-width: none;
+  max-height: none;
+  overflow: hidden;
+}
+
+.penseed-result-modal .penseed-result {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.penseed-result-modal .penseed-grow {
+  flex: 1 1 auto;
+  min-height: 3em;
+  max-height: none;
+}

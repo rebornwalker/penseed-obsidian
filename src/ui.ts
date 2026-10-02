@@ -119,6 +119,7 @@ export class ReanalysisResultModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
+    this.modalEl.addClass("penseed-result-modal");
     contentEl.addClass("penseed-result");
     this.resizeCleanup = installModalResize(this);
 
@@ -211,6 +212,7 @@ export class ReanalysisResultModal extends Modal {
       contentEl.createEl("h3", { text: "Foreshadowings" });
       const fsList = contentEl.createEl("ul");
       fsList.addClass("penseed-item-list");
+      fsList.addClass("penseed-grow");
       for (const f of this.summary.foreshadowings) {
         const li = fsList.createEl("li");
         li.addClass("penseed-item-row");
@@ -254,12 +256,6 @@ export class ReanalysisResultModal extends Modal {
         })
         .addClass("penseed-cta-label");
 
-      if (this.summary.estimatedReplayCredits > 0) {
-        contentEl.createDiv({
-          text: `Estimated ${this.summary.estimatedReplayCredits} credits to re-analyze all downstream chapters.`,
-        });
-      }
-
       // Read-only list of affected chapters. Individual per-row "re-analyze" is
       // deliberately removed: re-analyzing a single stale chapter out of order
       // corrupts downstream state (cascade/butterfly effect). The only action is
@@ -269,6 +265,7 @@ export class ReanalysisResultModal extends Modal {
       if (!this.summary.affectedListUnavailable) {
         const list = contentEl.createEl("ul");
         list.addClass("penseed-item-list");
+        list.addClass("penseed-grow");
         for (const item of this.summary.affected) {
           const li = list.createEl("li");
           li.addClass("penseed-item-row");
