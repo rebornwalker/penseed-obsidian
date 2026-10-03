@@ -46,6 +46,7 @@ export interface ReanalysisSummary {
   affectedListUnavailable?: boolean;
   isFirstAnalysis: boolean;
   unchanged?: boolean;
+  noopReason?: string;
   foreshadowings: ForeshadowingSummaryItem[];
   entities: EntitySummaryItem[];
   foreshadowingsError?: boolean;
@@ -143,8 +144,12 @@ export class ReanalysisResultModal extends Modal {
     }
 
     if (this.summary.unchanged) {
+      const wordingOnly =
+        this.summary.noopReason === "semantic unchanged (wording-only)";
       const notice = contentEl.createDiv({
-        text: "This chapter hasn't changed since your last analysis, so Penseed skipped the re-run. Your notes are already up to date — no credits were used.",
+        text: wordingOnly
+          ? "Only your wording changed — the meaning is unchanged, so Penseed skipped the full re-run. No downstream chapters are affected: your story is consistent, safe to continue."
+          : "This chapter hasn't changed since your last analysis, so Penseed skipped the re-run. Your notes are already up to date — no credits were used, and no downstream chapters are affected.",
       });
       notice.addClass("penseed-unchanged-notice");
     }
@@ -280,6 +285,14 @@ export class ReanalysisResultModal extends Modal {
       if (this.summary.onBatchReplay) {
         this.renderBatchReplay(contentEl);
       }
+    } else if (!this.summary.unchanged) {
+      // Phase 0.22-11: a real re-analysis that found no downstream impact. Give
+      // the author an explicit all-clear instead of a silent omission.
+      contentEl
+        .createDiv({
+          text: "No downstream chapters are affected — your story is consistent, safe to continue.",
+        })
+        .addClass("penseed-unchanged-notice");
     }
 
     const button = contentEl.createEl("button", { text: "Open Penseed" });

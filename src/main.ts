@@ -207,6 +207,8 @@ interface SingleReanalysisTaskState {
   taskId: string;
   projectId: number;
   chapterId: number;
+  notePath: string;
+  content: string;
   status: "running" | "completed" | "error" | "cancelled";
   error: string | null;
   result: ReanalyzeResult | null;
@@ -219,8 +221,15 @@ export default class PenseedPlugin extends Plugin {
   private singleTask: SingleReanalysisTaskState | null = null;
   private batchStatusItem: HTMLElement | null = null;
 
+  // Phase 0.22: last-analyzed content per note path, so the backend's
+  // sentence-level semantic gate can compare the author's old vs new text.
+  // Bounded to avoid unbounded growth on 2000+ chapter vaults.
+  private static readonly MAX_CONTENT_CACHE = 2000;
+  private contentCache: Map<string, string> = new Map();
+
   async onload(): Promise<void> {
     await this.loadSettings();
+    await this.loadContentCache();
     this.auth = new PenseedAuthManager(this.app, this.settings.apiUrl);
 
     this.addSettingTab(new PenseedSettingTab(this.app, this));
@@ -326,6 +335,55 @@ export default class PenseedPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+  }
+
+  private contentCachePath(): string {
+    return `${this.app.vault.configDir}/plugins/${this.manifest.dir}/content-cache.json`;
+  }
+
+  private async loadContentCache(): Promise<void> {
+    try {
+      const raw = await this.app.vault.adapter.read(this.contentCachePath());
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        for (const [k, v] of Object.entries(parsed)) {
+          if (typeof v === "string" && v.trim()) this.contentCache.set(k, v);
+        }
+      }
+    } catch {
+      // no cache yet, or unreadable — start empty
+    }
+  }
+
+  private async persistContentCache(): Promise<void> {
+    try {
+      const obj: Record<string, string> = {};
+      for (const [k, v] of this.contentCache) obj[k] = v;
+      await this.app.vault.adapter.write(
+        this.contentCachePath(),
+        JSON.stringify(obj)
+      );
+    } catch (e) {
+      console.error("[Penseed] Failed to persist content cache", e);
+    }
+  }
+
+  private getRememberedContent(notePath: string): string {
+    return this.contentCache.get(notePath) ?? "";
+  }
+
+  private rememberContent(notePath: string, content: string): void {
+    const trimmed = (content ?? "").trim();
+    if (!notePath || !trimmed) return;
+    // refresh insertion order so this becomes most-recent, then evict oldest
+    if (this.contentCache.has(notePath)) this.contentCache.delete(notePath);
+    this.contentCache.set(notePath, trimmed);
+    while (this.contentCache.size > PenseedPlugin.MAX_CONTENT_CACHE) {
+      const oldest = this.contentCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.contentCache.delete(oldest);
+    }
+    void this.persistContentCache();
   }
 
   private async analyzeCurrentNote(): Promise<void> {
@@ -443,7 +501,9 @@ export default class PenseedPlugin extends Plugin {
           token,
           chapter,
           content,
-          projectId
+          projectId,
+          file.path,
+          this.getRememberedContent(file.path)
         );
         return;
       }
@@ -524,15 +584,19 @@ export default class PenseedPlugin extends Plugin {
         entities,
         resolvedItems,
         summary,
-        onSave: (selection) =>
-          this.saveReviewSelections(
+        onSave: async (selection) => {
+          await this.saveReviewSelections(
             apiUrl,
             token,
             projectId,
             chapter.id,
             chapterNumber,
             selection
-          ),
+          );
+          // Phase 0.22: cache the just-analyzed content so the chapter's FIRST
+          // edit→re-analyze cycle can reuse it as the semantic gate's old text.
+          this.rememberContent(file.path, content);
+        },
       }).open();
     } catch (e) {
       notice.hide();
@@ -707,7 +771,9 @@ export default class PenseedPlugin extends Plugin {
     token: string,
     chapter: PenseedChapter,
     content: string,
-    projectId: number
+    projectId: number,
+    notePath: string,
+    previousContent: string
   ): Promise<void> {
     if (
       this.singleTask?.status === "running" ||
@@ -717,12 +783,20 @@ export default class PenseedPlugin extends Plugin {
       return;
     }
 
-    const started = await startSingleReanalysis(apiUrl, token, chapter.id, content);
+    const started = await startSingleReanalysis(
+      apiUrl,
+      token,
+      chapter.id,
+      content,
+      previousContent
+    );
 
     this.singleTask = {
       taskId: started.task_id,
       projectId,
       chapterId: chapter.id,
+      notePath,
+      content,
       status: "running",
       error: null,
       result: null,
@@ -802,6 +876,10 @@ export default class PenseedPlugin extends Plugin {
       return;
     }
 
+    // Phase 0.22: the server just committed this chapter's content (hash + gate),
+    // so cache it as the "last-analyzed" text for the next edit→re-analyze cycle.
+    this.rememberContent(task.notePath, task.content);
+
     const apiUrl = this.settings.apiUrl;
     const token = await this.auth.getAccessToken();
     if (!token) return;
@@ -853,6 +931,7 @@ export default class PenseedPlugin extends Plugin {
       affectedListUnavailable: built.listChaptersFailed,
       isFirstAnalysis: false,
       unchanged: result.noop === true,
+      noopReason: result.noop_reason ?? undefined,
       foreshadowings,
       entities,
       foreshadowingsError: fsResult.status !== "fulfilled",
@@ -930,7 +1009,11 @@ export default class PenseedPlugin extends Plugin {
       }
       try {
         const content = await this.app.vault.read(note);
-        payload.push({ chapter_id: id, content });
+        payload.push({
+          chapter_id: id,
+          content,
+          previous_content: this.getRememberedContent(note.path),
+        });
       } catch (e) {
         console.error("[Penseed] Failed to read note for chapter", id, e);
         skippedNoNote++;

@@ -217,14 +217,15 @@ export async function reanalyzeChapter(
   apiUrl: string,
   token: string,
   chapterId: number,
-  content: string
+  content: string,
+  previousContent?: string
 ): Promise<ReanalyzeResult> {
   return request<ReanalyzeResult>(
     apiUrl,
     token,
     `/api/chapters/${chapterId}/reanalyze`,
     "POST",
-    { content }
+    { content, previous_content: previousContent || null }
   );
 }
 
@@ -243,14 +244,15 @@ export async function startSingleReanalysis(
   apiUrl: string,
   token: string,
   chapterId: number,
-  content: string
+  content: string,
+  previousContent?: string
 ): Promise<StartSingleReanalysisResult> {
   return request<StartSingleReanalysisResult>(
     apiUrl,
     token,
     `/api/chapters/${chapterId}/reanalyze-async`,
     "POST",
-    { content }
+    { content, previous_content: previousContent || null }
   );
 }
 
@@ -341,6 +343,7 @@ export async function endReanalysisWave(
 export interface ReanalysisBatchChapter {
   chapter_id: number;
   content: string;
+  previous_content?: string;
 }
 
 export interface StartReanalysisBatchResult {
