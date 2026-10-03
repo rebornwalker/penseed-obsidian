@@ -338,7 +338,7 @@ export default class PenseedPlugin extends Plugin {
   }
 
   private contentCachePath(): string {
-    return `${this.app.vault.configDir}/plugins/${this.manifest.dir}/content-cache.json`;
+    return `${this.app.vault.configDir}/plugins/${this.manifest.id}/content-cache.json`;
   }
 
   private async loadContentCache(): Promise<void> {
