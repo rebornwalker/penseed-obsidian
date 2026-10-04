@@ -73,8 +73,10 @@ function installModalResize(modal: Modal): () => void {
   let startY = 0;
   let startWidth = 0;
   let startHeight = 0;
+  let didResize = false;
 
   const onMove = (ev: MouseEvent): void => {
+    didResize = true;
     const width = Math.min(
       window.innerWidth - 16,
       Math.max(360, startWidth + (ev.clientX - startX))
@@ -91,6 +93,12 @@ function installModalResize(modal: Modal): () => void {
     document.body.classList.remove("penseed-resizing");
     document.removeEventListener("mousemove", onMove);
     document.removeEventListener("mouseup", stop);
+    // 点了一下没拖动：恢复默认尺寸，避免残留 user-resized class 让列表永久展开。
+    if (!didResize) {
+      modalEl.style.width = "";
+      modalEl.style.height = "";
+      modalEl.removeClass("penseed-user-resized");
+    }
   };
 
   handle.addEventListener("mousedown", (ev) => {
@@ -100,6 +108,12 @@ function installModalResize(modal: Modal): () => void {
     startY = ev.clientY;
     startWidth = modalEl.offsetWidth;
     startHeight = modalEl.offsetHeight;
+    didResize = false;
+    // 先钉住当前尺寸再加 class：.penseed-user-resized 会把 max-height:80vh 和
+    // 列表 max-height:12em 都改成 none，若 addClass 前不固定内联尺寸，mousedown
+    // 瞬间 modal 就跳到内容自然高度；手滑松手后更会卡死在视口外、无法再操作。
+    modalEl.style.width = `${startWidth}px`;
+    modalEl.style.height = `${startHeight}px`;
     modalEl.addClass("penseed-user-resized");
     document.body.classList.add("penseed-resizing");
     document.addEventListener("mousemove", onMove);
@@ -367,6 +381,7 @@ export class BatchProgressModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
+    this.modalEl.addClass("penseed-result-modal");
     contentEl.addClass("penseed-result");
     this.resizeCleanup = installModalResize(this);
     this.render();
@@ -395,50 +410,70 @@ export class BatchProgressModal extends Modal {
       return;
     }
 
+    const body = contentEl.createDiv({ cls: "penseed-batch-body" });
+
     if (state.status === "running") {
       const total = state.total || 0;
       const completed = state.completed || 0;
-      contentEl.createDiv({
-        text: `Re-analyzing ${completed}/${total}${
-          state.failed > 0 ? ` — ${state.failed} failed` : ""
-        }`,
+      body.createDiv({
+        cls: "penseed-batch-status",
+        text: `Re-analyzing ${completed}/${total}`,
       });
+
+      const meta = body.createDiv({ cls: "penseed-batch-meta" });
       if (state.currentChapterNumber != null) {
-        contentEl.createDiv({
-          text: `Current chapter: ${state.currentChapterNumber}`,
+        meta.createDiv({
+          cls: "penseed-batch-tag",
+          text: `Chapter ${state.currentChapterNumber}`,
         });
-      }
-      if (this.onCancel) {
-        const cancel = contentEl.createEl("button", { text: "Cancel" });
-        cancel.addClass("penseed-batch-button");
-        cancel.addEventListener("click", () => {
-          void this.onCancel!();
-        });
-      }
-    } else if (state.status === "completed") {
-      const parts: string[] = [
-        `${state.completed} chapter${plural(state.completed)} re-analyzed`,
-      ];
-      if (state.skippedNoNote > 0) {
-        parts.push(`${state.skippedNoNote} skipped (no local note)`);
       }
       if (state.failed > 0) {
-        parts.push(`${state.failed} failed`);
+        meta.createDiv({ cls: "penseed-batch-tag", text: `${state.failed} failed` });
       }
-      contentEl.createDiv({ text: parts.join(", ") + "." });
+    } else if (state.status === "completed") {
+      body.createDiv({
+        cls: "penseed-batch-status",
+        text: `${state.completed} chapter${plural(state.completed)} re-analyzed`,
+      });
+
+      const meta = body.createDiv({ cls: "penseed-batch-meta" });
+      if (state.skippedNoNote > 0) {
+        meta.createDiv({
+          cls: "penseed-batch-tag",
+          text: `${state.skippedNoNote} skipped (no local note)`,
+        });
+      }
+      if (state.failed > 0) {
+        meta.createDiv({ cls: "penseed-batch-tag", text: `${state.failed} failed` });
+      }
+
       if (state.converged === false && state.newStaleChapterIds.length > 0) {
-        contentEl.createDiv({
+        body.createDiv({
+          cls: "penseed-batch-detail",
           text: `${state.newStaleChapterIds.length} more chapter${plural(
             state.newStaleChapterIds.length
           )} now out of date — open Penseed to continue.`,
         });
       }
     } else if (state.status === "error") {
-      contentEl.createDiv({
+      body.createDiv({
+        cls: "penseed-batch-detail",
         text: state.error || "Batch re-analysis failed.",
       });
     } else {
-      contentEl.createDiv({ text: "Batch re-analysis cancelled." });
+      body.createDiv({
+        cls: "penseed-batch-detail",
+        text: "Batch re-analysis cancelled.",
+      });
+    }
+
+    if (state.status === "running" && this.onCancel) {
+      const footer = contentEl.createDiv({ cls: "penseed-batch-footer" });
+      const cancel = footer.createEl("button", { text: "Cancel" });
+      cancel.addClass("penseed-batch-button");
+      cancel.addEventListener("click", () => {
+        void this.onCancel!();
+      });
     }
   }
 }
