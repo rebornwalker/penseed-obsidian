@@ -857,13 +857,18 @@ export default class PenseedPlugin extends Plugin {
     // Plugin unloaded mid-poll: the task was detached; do not touch the UI.
     if (this.singleTask !== task) return;
 
-    this.renderStatus();
     if (task.status === "completed") {
       await this.renderSingleReanalysisResult(task);
     } else if (task.status === "error") {
       new Notice(task.error || "Single-chapter re-analysis failed.");
     } else if (task.status === "cancelled") {
       new Notice("Single-chapter re-analysis cancelled.");
+    }
+
+    // 完成后清空任务引用，避免状态栏残留旧的完成信息（单章/批量共用同一状态栏条目）。
+    if (this.singleTask === task) {
+      this.singleTask = null;
+      this.renderStatus();
     }
   }
 
@@ -1112,8 +1117,13 @@ export default class PenseedPlugin extends Plugin {
     // Plugin unloaded mid-poll: the task was detached; do not touch the UI.
     if (this.batchTask !== task) return;
 
-    this.renderStatus();
     this.notifyBatchFinished(task);
+
+    // 完成后清空任务引用，避免状态栏残留旧的完成信息（单章/批量共用同一状态栏条目）。
+    if (this.batchTask === task) {
+      this.batchTask = null;
+      this.renderStatus();
+    }
   }
 
   private renderStatus(): void {
