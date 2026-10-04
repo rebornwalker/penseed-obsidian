@@ -98,7 +98,7 @@ function extractChapterNumber(filename: string): number | null {
 
   // 3. 阿拉伯数字兜底：先剥掉日期前缀（如 2026-09-28），再取第一个独立数字。
   //    修复：/\d+/ 会误抓日期年份（"2026-09-28 第5章" → 抓到 2026）。
-  const stripped = filename.replace(/^\d{4}[-_.\/]\d{1,2}[-_.\/]\d{1,2}[-_.\/]?/, "");
+  const stripped = filename.replace(/^\d{4}[-_./]\d{1,2}[-_./]\d{1,2}[-_./]?/, "");
   const arabic = stripped.match(/\d+/);
   if (arabic) return parseInt(arabic[0], 10);
 
@@ -121,7 +121,7 @@ function toStringArray(value: unknown): string[] | undefined {
 }
 
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 /**
@@ -301,7 +301,7 @@ export default class PenseedPlugin extends Plugin {
     });
   }
 
-  async onunload(): Promise<void> {
+  onunload(): void {
     // Stop the background poll loop from touching a disposed plugin.
     this.batchTask = null;
     this.singleTask = null;
@@ -344,7 +344,7 @@ export default class PenseedPlugin extends Plugin {
   private async loadContentCache(): Promise<void> {
     try {
       const raw = await this.app.vault.adapter.read(this.contentCachePath());
-      const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
       if (parsed && typeof parsed === "object") {
         for (const [k, v] of Object.entries(parsed)) {
           if (typeof v === "string" && v.trim()) this.contentCache.set(k, v);

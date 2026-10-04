@@ -95,8 +95,7 @@ function installModalResize(modal: Modal): () => void {
     document.removeEventListener("mouseup", stop);
     // 点了一下没拖动：恢复默认尺寸，避免残留 user-resized class 让列表永久展开。
     if (!didResize) {
-      modalEl.style.width = "";
-      modalEl.style.height = "";
+      modalEl.setCssProps({ width: "", height: "" });
       modalEl.removeClass("penseed-user-resized");
     }
   };
