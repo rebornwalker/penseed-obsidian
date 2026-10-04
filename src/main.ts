@@ -783,12 +783,8 @@ export default class PenseedPlugin extends Plugin {
       return;
     }
 
-    const started = await startSingleReanalysis(
-      apiUrl,
-      token,
-      chapter.id,
-      content,
-      previousContent
+    const started = await withRetry(() =>
+      startSingleReanalysis(apiUrl, token, chapter.id, content, previousContent)
     );
 
     this.singleTask = {
@@ -1032,7 +1028,9 @@ export default class PenseedPlugin extends Plugin {
       return;
     }
 
-    const started = await startReanalysisBatch(apiUrl, token, projectId, payload);
+    const started = await withRetry(() =>
+      startReanalysisBatch(apiUrl, token, projectId, payload)
+    );
 
     this.batchTask = {
       taskId: started.task_id,
