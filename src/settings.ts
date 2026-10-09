@@ -1,17 +1,22 @@
-import { App, Notice, PluginSettingTab } from "obsidian";
+import { App, PluginSettingTab } from "obsidian";
 import type { SettingDefinitionItem } from "obsidian";
 import type PenseedPlugin from "./main";
+import { notify } from "./notify";
 
 export interface PenseedSettings {
   apiUrl: string;
   lastProjectId: number | null;
   folderProjectMap: Record<string, number>;
+  changeReminderMinChars: number;
+  changeReminderRatioPct: number;
 }
 
 export const DEFAULT_SETTINGS: PenseedSettings = {
   apiUrl: "https://api.penseed.app",
   lastProjectId: null,
   folderProjectMap: {},
+  changeReminderMinChars: 50,
+  changeReminderRatioPct: 1,
 };
 
 export class PenseedSettingTab extends PluginSettingTab {
@@ -23,7 +28,51 @@ export class PenseedSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  // Phase 0.23: bind declarative `control` settings to the plugin's settings
+  // object, so the reminder threshold number inputs persist like everything else.
+  getControlValue(key: string): unknown {
+    return (this.plugin.settings as unknown as Record<string, unknown>)[key];
+  }
+
+  setControlValue(key: string, value: unknown): void {
+    (this.plugin.settings as unknown as Record<string, unknown>)[key] = value;
+    void this.plugin.saveSettings();
+  }
+
   getSettingDefinitions(): SettingDefinitionItem[] {
+    const reminderSettings: SettingDefinitionItem[] = [
+      {
+        name: "Re-analysis reminder — minimum change (chars)",
+        desc:
+          "When you edit an analyzed note and leave it, Penseed suggests " +
+          "re-analysis only if the change exceeds this many characters AND the " +
+          "ratio below. Small typo/punctuation edits stay under this bar.",
+        control: {
+          type: "number",
+          key: "changeReminderMinChars",
+          defaultValue: 50,
+          min: 0,
+          max: 10000,
+          step: 1,
+        },
+      },
+      {
+        name: "Re-analysis reminder — change ratio (%)",
+        desc:
+          "Also require the change to exceed this percentage of the note's " +
+          "length. Combined with the minimum above — both must be met before " +
+          "the reminder appears.",
+        control: {
+          type: "number",
+          key: "changeReminderRatioPct",
+          defaultValue: 1,
+          min: 0,
+          max: 100,
+          step: 1,
+        },
+      },
+    ];
+
     if (this.plugin.auth.isConnected()) {
       const email = this.plugin.auth.getEmail();
       return [
@@ -34,6 +83,7 @@ export class PenseedSettingTab extends PluginSettingTab {
             void this.disconnect();
           },
         },
+        ...reminderSettings,
       ];
     }
 
@@ -50,6 +100,7 @@ export class PenseedSettingTab extends PluginSettingTab {
           void this.connect();
         },
       },
+      ...reminderSettings,
     ];
   }
 
@@ -58,9 +109,9 @@ export class PenseedSettingTab extends PluginSettingTab {
     this.update();
     try {
       const email = await this.plugin.auth.connect();
-      new Notice(`Connected to Penseed${email ? ` as ${email}` : ""}.`);
+      notify(`Connected to Penseed${email ? ` as ${email}` : ""}.`);
     } catch (e) {
-      new Notice(e instanceof Error ? e.message : "Sign-in failed.");
+      notify(e instanceof Error ? e.message : "Sign-in failed.");
     } finally {
       this.connecting = false;
       this.update();
@@ -69,7 +120,7 @@ export class PenseedSettingTab extends PluginSettingTab {
 
   private async disconnect(): Promise<void> {
     await this.plugin.auth.disconnect();
-    new Notice("Disconnected from Penseed.");
+    notify("Disconnected from Penseed.");
     this.update();
   }
 }

@@ -1,5 +1,6 @@
-import { ItemView, WorkspaceLeaf, Notice, setIcon } from "obsidian";
+import { ItemView, WorkspaceLeaf, setIcon } from "obsidian";
 import type PenseedPlugin from "./main";
+import { notify } from "./notify";
 import {
   ApiError,
   listProjects,
@@ -296,7 +297,7 @@ export class ForeshadowingBoardView extends ItemView {
 
     const token = await this.plugin.auth.getAccessToken();
     if (!token) {
-      new Notice("Please connect to Penseed in Settings first.");
+      notify("Please connect to Penseed in Settings first.");
       await this.loadBoard();
       return;
     }
@@ -309,7 +310,7 @@ export class ForeshadowingBoardView extends ItemView {
         newStatus
       );
     } catch (e) {
-      new Notice(
+      notify(
         e instanceof ApiError
           ? e.userMessage
           : "Failed to update foreshadowing status."
@@ -353,7 +354,7 @@ export class ForeshadowingBoardView extends ItemView {
       } catch {
         // fall through to Notice
       }
-      new Notice("Open Settings → Penseed to connect.");
+      notify("Open Settings → Penseed to connect.");
     });
   }
 

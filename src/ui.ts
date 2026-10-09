@@ -1,5 +1,6 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal } from "obsidian";
 import { ApiError } from "./api";
+import { notify } from "./notify";
 
 export interface ReplayItem {
   chapterNumber: number;
@@ -337,7 +338,7 @@ export class ReanalysisResultModal extends Modal {
         } catch (e) {
           button.disabled = false;
           button.setText("Batch re-analyze failed — retry");
-          new Notice(
+          notify(
             e instanceof ApiError
               ? e.userMessage
               : "Batch re-analysis failed. Check the Penseed web app for details."

@@ -49,6 +49,7 @@ import {
   ForeshadowingBoardView,
   VIEW_TYPE_FORESHADOWING_BOARD,
 } from "./board";
+import { notify } from "./notify";
 
 const CN_DIGITS: Record<string, number> = {
   "零": 0, "〇": 0,
@@ -154,6 +155,55 @@ async function withRetry<T>(
   throw lastError;
 }
 
+/**
+ * Phase 0.23 — free character-level diff: line-based LCS backtrack, returning
+ * the total character count of added + removed lines as an approximation of
+ * "how much the author actually changed". Used only when leaving a note, to
+ * gate the re-analysis reminder — a few typo/punctuation edits stay under the
+ * threshold and won't light up the reminder. No LLM, no quota.
+ */
+function diffChangedChars(oldText: string, newText: string): number {
+  const a = oldText.split("\n");
+  const b = newText.split("\n");
+  const n = a.length;
+  const m = b.length;
+  const dp: number[][] = Array.from({ length: n + 1 }, () =>
+    new Array(m + 1).fill(0)
+  );
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] =
+        a[i] === b[j]
+          ? dp[i + 1][j + 1] + 1
+          : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  let changed = 0;
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      changed += a[i].length; // deleted line
+      i++;
+    } else {
+      changed += b[j].length; // added line
+      j++;
+    }
+  }
+  while (i < n) {
+    changed += a[i].length;
+    i++;
+  }
+  while (j < m) {
+    changed += b[j].length;
+    j++;
+  }
+  return changed;
+}
+
 class ProjectSuggestModal extends SuggestModal<PenseedProject> {
   private projects: PenseedProject[];
   private resolve: (project: PenseedProject | null) => void;
@@ -220,6 +270,11 @@ export default class PenseedPlugin extends Plugin {
   private batchTask: ReanalysisBatchTaskState | null = null;
   private singleTask: SingleReanalysisTaskState | null = null;
   private batchStatusItem: HTMLElement | null = null;
+  // Phase 0.23: edit-reminder state — the note path currently flagged, plus the
+  // last active note path so "leaving a note" can be detected on leaf changes.
+  private changeReminderStatusItem: HTMLElement | null = null;
+  private lastActiveNotePath: string | null = null;
+  private remindedNotePath: string | null = null;
 
   // Phase 0.22: last-analyzed content per note path, so the backend's
   // sentence-level semantic gate can compare the author's old vs new text.
@@ -296,8 +351,45 @@ export default class PenseedPlugin extends Plugin {
       if (this.batchTask) {
         this.openBatchProgressModal();
       } else if (this.singleTask?.status === "running") {
-        new Notice("Single-chapter re-analysis is running in the background.");
+        notify("Single-chapter re-analysis is running in the background.");
       }
+    });
+
+    // ---- Phase 0.23: edit-reminder ----
+    // A persistent status-bar marker that lights up when an analyzed note was
+    // edited beyond the threshold and then left. Click re-analyzes; right-click
+    // dismisses. Never auto-runs (that would silently spend quota).
+    this.changeReminderStatusItem = this.addStatusBarItem();
+    this.changeReminderStatusItem.addClass("penseed-change-reminder");
+    this.changeReminderStatusItem.hide();
+    this.changeReminderStatusItem.addEventListener("click", () => {
+      const path = this.remindedNotePath;
+      if (path) void this.openNoteAndAnalyze(path);
+    });
+    this.changeReminderStatusItem.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      this.clearChangeReminder();
+    });
+
+    // Detect "leaving a note" as the natural breakpoint to check for edits.
+    this.lastActiveNotePath = this.app.workspace.getActiveFile()?.path ?? null;
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => {
+        const prev = this.lastActiveNotePath;
+        const current = this.app.workspace.getActiveFile()?.path ?? null;
+        this.lastActiveNotePath = current;
+        if (prev && prev !== current) {
+          void this.checkNoteForChanges(prev);
+        }
+        if (current && current === this.remindedNotePath) {
+          this.clearChangeReminder();
+        }
+      })
+    );
+    // Also treat window blur (switching to another app) as a breakpoint.
+    this.registerDomEvent(window, "blur", () => {
+      const current = this.app.workspace.getActiveFile();
+      if (current) void this.checkNoteForChanges(current.path);
     });
   }
 
@@ -306,6 +398,9 @@ export default class PenseedPlugin extends Plugin {
     this.batchTask = null;
     this.singleTask = null;
     this.batchStatusItem = null;
+    this.changeReminderStatusItem = null;
+    this.lastActiveNotePath = null;
+    this.remindedNotePath = null;
   }
 
   async activateBoardView(): Promise<void> {
@@ -384,18 +479,89 @@ export default class PenseedPlugin extends Plugin {
       this.contentCache.delete(oldest);
     }
     void this.persistContentCache();
+
+    // Phase 0.23: re-analysis just committed this note's content, so its
+    // edit-reminder (if any) is now stale — clear it.
+    if (notePath === this.remindedNotePath) {
+      this.clearChangeReminder();
+    }
+  }
+
+  // ---- Phase 0.23: edit-reminder helpers ----
+
+  private async checkNoteForChanges(notePath: string): Promise<void> {
+    if (!notePath) return;
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile) || file.extension !== "md") return;
+    if (
+      this.singleTask?.status === "running" ||
+      this.batchTask?.status === "running"
+    ) {
+      return;
+    }
+    const oldContent = this.getRememberedContent(notePath);
+    if (!oldContent) return;
+
+    let current: string;
+    try {
+      current = await this.app.vault.read(file);
+    } catch {
+      return;
+    }
+    const currentTrimmed = current.trim();
+    const oldTrimmed = oldContent.trim();
+    if (!currentTrimmed || currentTrimmed === oldTrimmed) return;
+
+    const changedChars = diffChangedChars(oldTrimmed, currentTrimmed);
+    const totalChars = currentTrimmed.length;
+    const minChars = this.settings.changeReminderMinChars;
+    const ratio = this.settings.changeReminderRatioPct / 100;
+    const threshold = Math.max(minChars, totalChars * ratio);
+    if (changedChars > threshold) {
+      this.showChangeReminder(notePath);
+    }
+  }
+
+  private showChangeReminder(notePath: string): void {
+    this.remindedNotePath = notePath;
+    if (this.changeReminderStatusItem) {
+      this.changeReminderStatusItem.textContent =
+        "Penseed: note changed — re-analyze?";
+      this.changeReminderStatusItem.setAttribute(
+        "title",
+        `"${notePath}" was edited after its last analysis. Click to re-analyze, right-click to dismiss.`
+      );
+      this.changeReminderStatusItem.show();
+    }
+    notify(
+      "Note changed since last analysis — re-analyze to stay consistent."
+    );
+  }
+
+  private clearChangeReminder(): void {
+    this.remindedNotePath = null;
+    if (this.changeReminderStatusItem) {
+      this.changeReminderStatusItem.hide();
+    }
+  }
+
+  private async openNoteAndAnalyze(notePath: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!(file instanceof TFile)) return;
+    await this.app.workspace.getLeaf().openFile(file);
+    await this.analyzeCurrentNote();
   }
 
   private async analyzeCurrentNote(): Promise<void> {
     const file = this.app.workspace.getActiveFile();
     if (!file || file.extension !== "md") {
-      new Notice("Please open a Markdown note first.");
+      notify("Please open a Markdown note first.");
       return;
     }
 
     const token = await this.auth.getAccessToken();
     if (!token) {
-      new Notice("Please connect to Penseed in Settings first.");
+      notify("Please connect to Penseed in Settings first.");
       return;
     }
 
@@ -405,7 +571,7 @@ export default class PenseedPlugin extends Plugin {
     try {
       content = await this.app.vault.read(file);
     } catch (e) {
-      new Notice("Penseed analysis failed.");
+      notify("Penseed analysis failed.");
       console.error("[Penseed] Failed to read note", e);
       return;
     }
@@ -419,7 +585,7 @@ export default class PenseedPlugin extends Plugin {
     try {
       projects = await listProjects(apiUrl, token);
       if (projects.length === 0) {
-        new Notice("You don't have any projects yet. Create one at Penseed first.");
+        notify("You don't have any projects yet. Create one at Penseed first.");
         return;
       }
       const mapped = this.settings.folderProjectMap[folderPath];
@@ -680,7 +846,7 @@ export default class PenseedPlugin extends Plugin {
         });
       } catch (e) {
         console.error("[Penseed] Failed to save entities", e);
-        new Notice("Failed to save elements.");
+        notify("Failed to save elements.");
       }
     }
 
@@ -704,9 +870,9 @@ export default class PenseedPlugin extends Plugin {
         parts.push(`${resolvedFailed} resolve-update failed`);
       }
       const suffix = failedErrors[0] ? ` — ${failedErrors[0]}` : "";
-      new Notice(`Penseed: ${parts.join(", ")}.${suffix}`);
+      notify(`Penseed: ${parts.join(", ")}.${suffix}`);
     } else {
-      new Notice(saved > 0 ? `Saved ${saved} foreshadowing.` : "Saved.");
+      notify(saved > 0 ? `Saved ${saved} foreshadowing.` : "Saved.");
     }
   }
 
@@ -779,7 +945,7 @@ export default class PenseedPlugin extends Plugin {
       this.singleTask?.status === "running" ||
       this.batchTask?.status === "running"
     ) {
-      new Notice("A re-analysis is already running. Wait for it to finish.");
+      notify("A re-analysis is already running. Wait for it to finish.");
       return;
     }
 
@@ -799,7 +965,7 @@ export default class PenseedPlugin extends Plugin {
     };
 
     this.renderStatus();
-    new Notice(
+    notify(
       "Re-analysis submitted. It runs in the background — check the status bar for progress."
     );
     void this.pollSingleTaskInBackground();
@@ -856,9 +1022,9 @@ export default class PenseedPlugin extends Plugin {
     if (task.status === "completed") {
       await this.renderSingleReanalysisResult(task);
     } else if (task.status === "error") {
-      new Notice(task.error || "Single-chapter re-analysis failed.");
+      notify(task.error || "Single-chapter re-analysis failed.");
     } else if (task.status === "cancelled") {
-      new Notice("Single-chapter re-analysis cancelled.");
+      notify("Single-chapter re-analysis cancelled.");
     }
 
     // 完成后清空任务引用，避免状态栏残留旧的完成信息（单章/批量共用同一状态栏条目）。
@@ -873,7 +1039,7 @@ export default class PenseedPlugin extends Plugin {
   ): Promise<void> {
     const result = task.result;
     if (!result) {
-      new Notice("Re-analysis completed but returned no result.");
+      notify("Re-analysis completed but returned no result.");
       return;
     }
 
@@ -955,11 +1121,11 @@ export default class PenseedPlugin extends Plugin {
   ): Promise<void> {
     // 重复触发防护：已有进行中的批处理任务时，不重复提交，直接打开进度浮窗。
     if (this.singleTask?.status === "running") {
-      new Notice("A single-chapter re-analysis is already running.");
+      notify("A single-chapter re-analysis is already running.");
       return;
     }
     if (this.batchTask?.status === "running") {
-      new Notice("A batch re-analysis is already running.");
+      notify("A batch re-analysis is already running.");
       this.openBatchProgressModal();
       return;
     }
@@ -1022,7 +1188,7 @@ export default class PenseedPlugin extends Plugin {
     }
 
     if (payload.length === 0) {
-      new Notice(
+      notify(
         "No chapters to re-analyze (all up to date, or local notes not found)."
       );
       return;
@@ -1047,7 +1213,7 @@ export default class PenseedPlugin extends Plugin {
     };
 
     this.renderStatus();
-    new Notice(
+    notify(
       "Batch re-analysis submitted. It runs in the background — check the status bar for progress."
     );
     void this.pollBatchTaskInBackground();
@@ -1242,17 +1408,17 @@ export default class PenseedPlugin extends Plugin {
       if (task.failed > 0) {
         parts.push(`${task.failed} failed`);
       }
-      new Notice(parts.join(", ") + ".");
+      notify(parts.join(", ") + ".");
     } else if (task.status === "error") {
-      new Notice(task.error || "Batch re-analysis failed.");
+      notify(task.error || "Batch re-analysis failed.");
     } else if (task.status === "cancelled") {
-      new Notice("Batch re-analysis cancelled.");
+      notify("Batch re-analysis cancelled.");
     }
   }
 
   private openBatchProgressModal(): void {
     if (!this.batchTask) {
-      new Notice("No batch re-analysis task in progress.");
+      notify("No batch re-analysis task in progress.");
       return;
     }
     new BatchProgressModal(
@@ -1275,12 +1441,12 @@ export default class PenseedPlugin extends Plugin {
   private async reassignFolderProject(): Promise<void> {
     const file = this.app.workspace.getActiveFile();
     if (!file) {
-      new Notice("Open a note first.");
+      notify("Open a note first.");
       return;
     }
     const token = await this.auth.getAccessToken();
     if (!token) {
-      new Notice("Please connect to Penseed in Settings first.");
+      notify("Please connect to Penseed in Settings first.");
       return;
     }
     let projects: PenseedProject[];
@@ -1291,7 +1457,7 @@ export default class PenseedPlugin extends Plugin {
       return;
     }
     if (projects.length === 0) {
-      new Notice("You don't have any projects yet. Create one at Penseed first.");
+      notify("You don't have any projects yet. Create one at Penseed first.");
       return;
     }
     const folderPath = file.parent?.path ?? "";
@@ -1300,7 +1466,7 @@ export default class PenseedPlugin extends Plugin {
     this.settings.folderProjectMap[folderPath] = chosen.id;
     this.settings.lastProjectId = chosen.id;
     await this.saveSettings();
-    new Notice(`"${folderPath || "Vault root"}" now maps to "${chosen.title}".`);
+    notify(`"${folderPath || "Vault root"}" now maps to "${chosen.title}".`);
   }
 
   private chooseProject(
@@ -1321,9 +1487,9 @@ export default class PenseedPlugin extends Plugin {
 
   private notifyError(e: unknown): void {
     if (e instanceof ApiError) {
-      new Notice(e.userMessage);
+      notify(e.userMessage);
     } else {
-      new Notice("Penseed analysis failed.");
+      notify("Penseed analysis failed.");
     }
     console.error("[Penseed]", e);
   }

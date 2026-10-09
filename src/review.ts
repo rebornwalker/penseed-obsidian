@@ -1,5 +1,6 @@
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal } from "obsidian";
 import { ApiError, ForeshadowingCandidate } from "./api";
+import { notify } from "./notify";
 
 function truncate(text: string | null | undefined, max = 80): string {
   if (!text) return "";
@@ -417,7 +418,7 @@ export class AnalysisReviewModal extends Modal {
       await this.data.onSave(selection);
       this.close();
     } catch (e) {
-      new Notice(errorMessage(e));
+      notify(errorMessage(e));
       this.saving = false;
       saveBtn.disabled = false;
       saveBtn.textContent = "Save";
