@@ -574,6 +574,13 @@ export interface ForeshadowingItem {
   foreshadowing_text_preview: string | null;
   priority: number | null;
   chapter_title?: string | null;
+  chapter_id?: number | null;
+  chapter?: {
+    chapter_number?: number | null;
+    [key: string]: unknown;
+  } | null;
+  start_position?: number | null;
+  end_position?: number | null;
   [key: string]: unknown;
 }
 

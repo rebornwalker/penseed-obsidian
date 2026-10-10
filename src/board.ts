@@ -1,6 +1,7 @@
-import { ItemView, WorkspaceLeaf, setIcon } from "obsidian";
+import { ItemView, WorkspaceLeaf, MarkdownView, TFile, setIcon } from "obsidian";
 import type PenseedPlugin from "./main";
 import { notify } from "./notify";
+import { extractChapterNumber } from "./chapter";
 import {
   ApiError,
   listProjects,
@@ -237,6 +238,9 @@ export class ForeshadowingBoardView extends ItemView {
     card.addEventListener("mouseleave", () => {
       this.hideTooltip();
     });
+    card.addEventListener("dblclick", () => {
+      void this.openAndHighlight(item);
+    });
   }
 
   private showTooltip(item: ForeshadowingItem, card: HTMLElement): void {
@@ -273,6 +277,65 @@ export class ForeshadowingBoardView extends ItemView {
 
   private hideTooltip(): void {
     this.tooltipEl?.removeClass("is-visible");
+  }
+
+  /**
+   * Phase 0.24: double-click a card to open its chapter note and highlight the
+   * exact foreshadowing sentence in the source. Reuses the same
+   * "chapter_number → note filename" mapping the reanalysis flow already relies
+   * on (main.ts `noteByNumber`), so no backend change is needed.
+   */
+  private resolveNoteByChapterNumber(chapterNumber: number): TFile | null {
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      const n = extractChapterNumber(f.basename);
+      if (n !== null && n === chapterNumber) return f;
+    }
+    return null;
+  }
+
+  private async openAndHighlight(item: ForeshadowingItem): Promise<void> {
+    const chapterNumber = item.chapter?.chapter_number;
+    if (typeof chapterNumber !== "number") {
+      notify("This foreshadowing has no chapter — open it on the web.");
+      return;
+    }
+
+    const note = this.resolveNoteByChapterNumber(chapterNumber);
+    if (!note) {
+      notify("No local note matched this chapter (filename needs a chapter number).");
+      return;
+    }
+
+    // Open in a tab leaf (not this board leaf, which can't host Markdown).
+    const leaf = this.app.workspace.getLeaf("tab");
+    await leaf.openFile(note);
+
+    const text = item.foreshadowing_text_preview;
+    if (!text || !text.trim()) return;
+
+    let content: string;
+    try {
+      content = await this.app.vault.read(note);
+    } catch {
+      return;
+    }
+
+    const offset = content.indexOf(text);
+    const view = leaf.view;
+    if (!(view instanceof MarkdownView)) return;
+
+    if (offset === -1) {
+      // Original text was rewritten — degrade to "open the note" without a
+      // misleading jump, never to a wrong position.
+      notify("Original text was edited — opened the chapter without highlighting.");
+      return;
+    }
+
+    const editor = view.editor;
+    const from = editor.offsetToPos(offset);
+    const to = editor.offsetToPos(offset + text.length);
+    editor.setSelection(from, to);
+    editor.scrollIntoView({ from, to }, true);
   }
 
   private async handleDrop(id: number, newStatus: string): Promise<void> {
