@@ -31,6 +31,78 @@ function errorMessage(e: unknown): string {
 }
 
 /**
+ * Normalize a string for fuzzy matching: keep only letters and digits,
+ * lowercase them, and record each kept character's original index so a match
+ * in the normalized string can be mapped back to exact source offsets.
+ */
+function normalizeForMatch(text: string): {
+  normalized: string;
+  indices: number[];
+} {
+  const normalized: string[] = [];
+  const indices: number[] = [];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (!/[\p{L}\p{N}]/u.test(ch)) continue;
+    normalized.push(ch.toLowerCase());
+    indices.push(i);
+  }
+  return { normalized: normalized.join(""), indices };
+}
+
+/**
+ * Locate `needle` in `content`, returning the exact [from, to) source offsets.
+ * Tries, in order: exact match, case-insensitive match, normalized fuzzy match
+ * (ignoring whitespace/punctuation/case), then a longest-word token anchor.
+ * Returns null only when nothing plausible matches.
+ */
+function locateMatch(
+  content: string,
+  needle: string
+): { from: number; to: number } | null {
+  if (!needle || !content) return null;
+
+  let offset = content.indexOf(needle);
+  if (offset !== -1) return { from: offset, to: offset + needle.length };
+
+  offset = content.toLowerCase().indexOf(needle.toLowerCase());
+  if (offset !== -1) return { from: offset, to: offset + needle.length };
+
+  const haystack = normalizeForMatch(content);
+  const query = normalizeForMatch(needle);
+
+  // Guard against overly short normalized needles, which would match
+  // spuriously all over a long chapter.
+  if (query.normalized.length >= 6) {
+    const normOffset = haystack.normalized.indexOf(query.normalized);
+    if (normOffset !== -1) {
+      return {
+        from: haystack.indices[normOffset],
+        to: haystack.indices[normOffset + query.normalized.length - 1] + 1,
+      };
+    }
+  }
+
+  // Token-anchor fallback: hop to the longest distinctive word in the preview.
+  const tokens = (needle.match(/[\p{L}\p{N}]+/gu) ?? [])
+    .filter((t) => t.length >= 4)
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 3);
+  for (const token of tokens) {
+    const tokenQuery = normalizeForMatch(token);
+    const pos = haystack.normalized.indexOf(tokenQuery.normalized);
+    if (pos !== -1) {
+      return {
+        from: haystack.indices[pos],
+        to: haystack.indices[pos + tokenQuery.normalized.length - 1] + 1,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Phase 0.13: a simplified kanban board in the plugin. It reuses the web board's
  * exact endpoints (`GET /api/foreshadowing/?project_id=` + `PUT /api/foreshadowing/{id}`),
  * so the backend `status` field is the single source of truth and both ends stay
@@ -286,9 +358,26 @@ export class ForeshadowingBoardView extends ItemView {
    * on (main.ts `noteByNumber`), so no backend change is needed.
    */
   private resolveNoteByChapterNumber(chapterNumber: number): TFile | null {
+    const projectId = this.projectId;
+    if (projectId === null) return null;
+    const folderMap = this.plugin.settings.folderProjectMap ?? {};
+    const mappedFolders = Object.keys(folderMap).filter(
+      (folder) => folderMap[folder] === projectId
+    );
+
     for (const f of this.app.vault.getMarkdownFiles()) {
       const n = extractChapterNumber(f.basename);
-      if (n !== null && n === chapterNumber) return f;
+      if (n !== chapterNumber) continue;
+      const parent = f.parent?.path ?? "";
+      // Project isolation: chapter numbers collide across projects (both have a
+      // "Chapter 1"). Only accept notes under folders mapped to THIS project.
+      if (mappedFolders.length > 0) {
+        const belongs = mappedFolders.some(
+          (folder) => parent === folder || parent.startsWith(folder + "/")
+        );
+        if (!belongs) continue;
+      }
+      return f;
     }
     return null;
   }
@@ -302,7 +391,7 @@ export class ForeshadowingBoardView extends ItemView {
 
     const note = this.resolveNoteByChapterNumber(chapterNumber);
     if (!note) {
-      notify("No local note matched this chapter (filename needs a chapter number).");
+      notify("No local note matched this chapter in this project.");
       return;
     }
 
@@ -320,20 +409,20 @@ export class ForeshadowingBoardView extends ItemView {
       return;
     }
 
-    const offset = content.indexOf(text);
     const view = leaf.view;
     if (!(view instanceof MarkdownView)) return;
 
-    if (offset === -1) {
-      // Original text was rewritten — degrade to "open the note" without a
-      // misleading jump, never to a wrong position.
+    // Fuzzy-locate the sentence: exact → case-insensitive → normalized →
+    // token-anchor, each step mapping back to exact source offsets.
+    const match = locateMatch(content, text);
+    if (!match) {
       notify("Original text was edited — opened the chapter without highlighting.");
       return;
     }
 
     const editor = view.editor;
-    const from = editor.offsetToPos(offset);
-    const to = editor.offsetToPos(offset + text.length);
+    const from = editor.offsetToPos(match.from);
+    const to = editor.offsetToPos(match.to);
     editor.setSelection(from, to);
     editor.scrollIntoView({ from, to }, true);
   }
