@@ -420,11 +420,24 @@ export class ForeshadowingBoardView extends ItemView {
       return;
     }
 
+    // The first open from an empty leaf resolves before the editor's document
+    // is loaded; wait until it catches up before selecting, otherwise the
+    // selection lands on an empty editor and is silently dropped.
+    await this.waitForEditorReady(view, content.length);
+
     const editor = view.editor;
     const from = editor.offsetToPos(match.from);
     const to = editor.offsetToPos(match.to);
     editor.setSelection(from, to);
     editor.scrollIntoView({ from, to }, true);
+  }
+
+  private async waitForEditorReady(view: MarkdownView, minLength: number): Promise<void> {
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      if (view.editor.getValue().length >= minLength) return;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    }
   }
 
   private async handleDrop(id: number, newStatus: string): Promise<void> {

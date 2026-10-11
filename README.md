@@ -67,6 +67,10 @@ Resolved / Cancelled). Drag a clue between columns to update its status, kept in
 sync with the web app. For the full board with relations and editing, open the
 web app.
 
+Double-click any card on the board to jump straight to the matching chapter
+note — Penseed opens it, scrolls to the exact sentence the card refers to, and
+highlights it for you, so you don't have to hunt through the chapter yourself.
+
 ## Analyze in order — from chapter one
 
 Penseed remembers your story the way a careful editor does: by reading it **in
@@ -105,10 +109,16 @@ chapter, one by one, in the right order, so the chain stays intact.
 ## Privacy
 
 When you choose to analyze a note, the plugin sends that note's content to
-Penseed for analysis only. Penseed uses the text to build its notes about your
-story and **never stores the original text itself**. The plugin does not read or
-upload any other files, does not watch your vault, and does not collect
-telemetry.
+Penseed for analysis only. By default Penseed uses the text to build its notes
+about your story and **does not store the original text itself**.
+
+You can optionally turn on **Save chapter text** in Penseed (off by default).
+When it's on, Penseed keeps an **encrypted** copy of each chapter's text so it
+can re-check later chapters after you rewrite an earlier one — no re-pasting
+needed. Turn the option off and all saved copies are deleted.
+
+The plugin does not read or upload any other files, does not watch your vault,
+and does not collect telemetry.
 
 Privacy policy: https://penseed.app/privacy
 
