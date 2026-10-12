@@ -346,9 +346,15 @@ export class ForeshadowingBoardView extends ItemView {
     const rect = card.getBoundingClientRect();
     const tipRect = tooltip.getBoundingClientRect();
 
-    // Right-align the tooltip to the card's right edge, expanding leftwards so
-    // it never overflows the right edge of the viewport.
-    let left = rect.right - tipRect.width;
+    // Keep the tooltip clear of the "open in web" button: right-align it to the
+    // button's left edge when present, otherwise the card's right edge. Expand
+    // leftwards so it never overflows the right edge of the viewport.
+    let rightEdge = rect.right;
+    const openWebBtn = card.querySelector<HTMLElement>(".penseed-card-web");
+    if (openWebBtn) {
+      rightEdge = openWebBtn.getBoundingClientRect().left - 4;
+    }
+    let left = rightEdge - tipRect.width;
     left = Math.max(8, left);
 
     // Keep the tooltip's top from rising above the card (avoids the header),
