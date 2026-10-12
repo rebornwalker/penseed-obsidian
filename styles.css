@@ -254,6 +254,21 @@
   overflow-wrap: anywhere;
 }
 
+.penseed-card-web {
+  flex-shrink: 0;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.penseed-card-web:hover {
+  color: var(--interactive-accent);
+}
+
 .penseed-card-chapter {
   margin-top: 0.3em;
   font-size: 0.75em;

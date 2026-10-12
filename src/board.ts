@@ -292,6 +292,21 @@ export class ForeshadowingBoardView extends ItemView {
       text: truncate(item.foreshadowing_text_preview),
     });
 
+    const openWebBtn = topEl.createEl("button", { cls: "penseed-card-web" });
+    setIcon(openWebBtn, "external-link");
+    openWebBtn.setAttribute("aria-label", "Open in Penseed");
+    openWebBtn.setAttribute(
+      "title",
+      "Open this foreshadowing in the Penseed web app"
+    );
+    openWebBtn.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+    });
+    openWebBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      void this.openInWeb(item);
+    });
+
     if (item.chapter_title) {
       card.createDiv({ cls: "penseed-card-chapter", text: item.chapter_title });
     }
@@ -380,6 +395,15 @@ export class ForeshadowingBoardView extends ItemView {
       return f;
     }
     return null;
+  }
+
+  private openInWeb(item: ForeshadowingItem): void {
+    if (this.projectId === null) return;
+    const webUrl = this.plugin.settings.webUrl.replace(/\/+$/, "");
+    window.open(
+      `${webUrl}/projects/${this.projectId}?tab=foreshadowing&foreshadowing_id=${item.id}`,
+      "_blank"
+    );
   }
 
   private async openAndHighlight(item: ForeshadowingItem): Promise<void> {
@@ -532,7 +556,8 @@ export class ForeshadowingBoardView extends ItemView {
     });
     const btn = box.createEl("button", { text: "Open Penseed", cls: "mod-cta" });
     btn.addEventListener("click", () => {
-      window.open("https://penseed.app", "_blank");
+      const webUrl = this.plugin.settings.webUrl.replace(/\/+$/, "");
+      window.open(webUrl, "_blank");
     });
   }
 

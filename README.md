@@ -71,6 +71,10 @@ Double-click any card on the board to jump straight to the matching chapter
 note — Penseed opens it, scrolls to the exact sentence the card refers to, and
 highlights it for you, so you don't have to hunt through the chapter yourself.
 
+Click the external-link icon on any card to open that foreshadowing's full
+detail view in the Penseed web app — Penseed jumps straight to the right project
+and opens the detail drawer, no hunting required.
+
 ## Analyze in order — from chapter one
 
 Penseed remembers your story the way a careful editor does: by reading it **in

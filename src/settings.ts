@@ -9,6 +9,7 @@ export interface PenseedSettings {
   folderProjectMap: Record<string, number>;
   changeReminderMinChars: number;
   changeReminderRatioPct: number;
+  webUrl: string;
 }
 
 export const DEFAULT_SETTINGS: PenseedSettings = {
@@ -17,6 +18,7 @@ export const DEFAULT_SETTINGS: PenseedSettings = {
   folderProjectMap: {},
   changeReminderMinChars: 50,
   changeReminderRatioPct: 1,
+  webUrl: "https://penseed.app",
 };
 
 export class PenseedSettingTab extends PluginSettingTab {
