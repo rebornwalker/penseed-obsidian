@@ -733,3 +733,23 @@ body.penseed-resizing {
   padding-top: 0.75em;
   border-top: 1px solid var(--background-modifier-border);
 }
+
+/* ---- Outdated-chapters badge (status bar) ---- */
+
+.penseed-stale-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  cursor: pointer;
+  color: var(--color-orange, #f0a030);
+  font-weight: 600;
+}
+
+.penseed-stale-badge:hover {
+  color: var(--text-normal);
+}
+
+.penseed-stale-badge .penseed-stale-badge-icon {
+  display: flex;
+  align-items: center;
+}

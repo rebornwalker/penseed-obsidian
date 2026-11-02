@@ -1,6 +1,7 @@
 import { App, Modal } from "obsidian";
 import { ApiError } from "./api";
 import { notify } from "./notify";
+import type { StaleDisplayItem } from "./stale";
 
 export interface ReplayItem {
   chapterNumber: number;
@@ -555,6 +556,86 @@ export class ConfirmReanalysisModal extends Modal {
       this.settled = true;
       this.resolve("cancel");
     }
+    this.contentEl.empty();
+  }
+}
+
+export class OutdatedChaptersModal extends Modal {
+  private items: StaleDisplayItem[];
+  private onBatchReanalyze: () => Promise<void>;
+  private resizeCleanup: (() => void) | null = null;
+
+  constructor(
+    app: App,
+    items: StaleDisplayItem[],
+    onBatchReanalyze: () => Promise<void>
+  ) {
+    super(app);
+    this.items = items;
+    this.onBatchReanalyze = onBatchReanalyze;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    this.modalEl.addClass("penseed-result-modal");
+    contentEl.addClass("penseed-result");
+    this.resizeCleanup = installModalResize(this);
+
+    const count = this.items.length;
+    contentEl.createEl("h2", {
+      text: `${count} outdated chapter${count === 1 ? "" : "s"}`,
+    });
+
+    const hint = contentEl.createDiv({
+      text: "These chapters are out of date because an earlier chapter changed. Re-analyze them in order to keep your story consistent.",
+    });
+    hint.addClass("penseed-unchanged-notice");
+
+    const list = contentEl.createEl("ul");
+    list.addClass("penseed-item-list");
+    list.addClass("penseed-grow");
+    for (const item of this.items) {
+      const li = list.createEl("li");
+      li.addClass("penseed-item-row");
+      const label =
+        item.chapterNumber !== null
+          ? item.noteTitle
+            ? `Chapter ${item.chapterNumber} — ${item.noteTitle}`
+            : `Chapter ${item.chapterNumber} — note not found`
+          : "Chapter (unnumbered)";
+      li.createSpan({ text: label });
+    }
+
+    const button = contentEl.createEl("button", {
+      text: "Batch re-analyze outdated chapters",
+    });
+    button.addClass("mod-cta");
+    button.addClass("penseed-batch-button");
+    button.addEventListener("click", () => {
+      void (async () => {
+        button.disabled = true;
+        button.setText("Submitting…");
+        try {
+          await this.onBatchReanalyze();
+          this.close();
+        } catch (e) {
+          button.disabled = false;
+          button.setText("Batch re-analyze failed — retry");
+          notify(
+            e instanceof ApiError
+              ? e.userMessage
+              : "Batch re-analysis failed. Check the Penseed web app for details."
+          );
+          console.error("[Penseed] Batch re-analysis from outdated badge failed", e);
+        }
+      })();
+    });
+  }
+
+  onClose(): void {
+    this.resizeCleanup?.();
+    this.resizeCleanup = null;
     this.contentEl.empty();
   }
 }

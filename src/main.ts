@@ -32,6 +32,7 @@ import {
   ReanalysisResultModal,
   ConfirmReanalysisModal,
   BatchProgressModal,
+  OutdatedChaptersModal,
   ReplayItem,
   ReanalysisBatchTaskState,
   ReanalysisTarget,
@@ -51,6 +52,7 @@ import {
 } from "./board";
 import { notify } from "./notify";
 import { extractChapterNumber } from "./chapter";
+import { staleChapterIds, staleBadgeText, mapStaleToDisplay } from "./stale";
 
 function smartWordCount(text: string): number {
   const trimmed = text.trim();
@@ -216,6 +218,9 @@ export default class PenseedPlugin extends Plugin {
   private batchTask: ReanalysisBatchTaskState | null = null;
   private singleTask: SingleReanalysisTaskState | null = null;
   private batchStatusItem: HTMLElement | null = null;
+  // Outdated-chapters badge: hidden until the remembered project has stale chapters.
+  private staleStatusItem: HTMLElement | null = null;
+  private staleChapterIds: number[] = [];
   // Phase 0.23: edit-reminder state — the note path currently flagged, plus the
   // last active note path so "leaving a note" can be detected on leaf changes.
   private changeReminderStatusItem: HTMLElement | null = null;
@@ -301,6 +306,16 @@ export default class PenseedPlugin extends Plugin {
       }
     });
 
+    // Outdated-chapters badge: hidden until the remembered project has stale chapters.
+    this.staleStatusItem = this.addStatusBarItem();
+    this.staleStatusItem.addClass("penseed-stale-badge");
+    this.staleStatusItem.hide();
+    this.staleStatusItem.addEventListener("click", () => {
+      if (this.staleChapterIds.length > 0) {
+        void this.openOutdatedChaptersModal();
+      }
+    });
+
     // ---- Phase 0.23: edit-reminder ----
     // A persistent status-bar marker that lights up when an analyzed note was
     // edited beyond the threshold and then left. Click re-analyzes; right-click
@@ -337,6 +352,10 @@ export default class PenseedPlugin extends Plugin {
       const current = this.app.workspace.getActiveFile();
       if (current) void this.checkNoteForChanges(current.path);
     });
+
+    // Initial outdated-chapters refresh: re-surfaces the badge after a restart
+    // ("travelled back from a trip") as long as stale chapters remain persisted.
+    void this.refreshStaleBadge();
   }
 
   onunload(): void {
@@ -344,6 +363,7 @@ export default class PenseedPlugin extends Plugin {
     this.batchTask = null;
     this.singleTask = null;
     this.batchStatusItem = null;
+    this.staleStatusItem = null;
     this.changeReminderStatusItem = null;
     this.lastActiveNotePath = null;
     this.remindedNotePath = null;
@@ -967,6 +987,7 @@ export default class PenseedPlugin extends Plugin {
 
     if (task.status === "completed") {
       await this.renderSingleReanalysisResult(task);
+      void this.refreshStaleBadge();
     } else if (task.status === "error") {
       notify(task.error || "Single-chapter re-analysis failed.");
     } else if (task.status === "cancelled") {
@@ -1228,6 +1249,7 @@ export default class PenseedPlugin extends Plugin {
     if (this.batchTask !== task) return;
 
     this.notifyBatchFinished(task);
+    void this.refreshStaleBadge();
 
     // 完成后清空任务引用，避免状态栏残留旧的完成信息（单章/批量共用同一状态栏条目）。
     if (this.batchTask === task) {
@@ -1438,5 +1460,81 @@ export default class PenseedPlugin extends Plugin {
       notify("Penseed analysis failed.");
     }
     console.error("[Penseed]", e);
+  }
+
+  private async refreshStaleBadge(): Promise<void> {
+    const item = this.staleStatusItem;
+    if (!item) return;
+
+    const projectId = this.settings.lastProjectId;
+    if (!projectId) {
+      this.staleChapterIds = [];
+      item.hide();
+      return;
+    }
+
+    const token = await this.auth.getAccessToken();
+    if (!token) {
+      this.staleChapterIds = [];
+      item.hide();
+      return;
+    }
+
+    let chapters: PenseedChapter[];
+    try {
+      chapters = await listChapters(this.settings.apiUrl, token, projectId);
+    } catch (e) {
+      // 拉取失败不打扰用户；保留当前徽章状态，下次成功时刷新。
+      return;
+    }
+
+    this.staleChapterIds = staleChapterIds(chapters);
+    if (this.staleChapterIds.length === 0) {
+      item.hide();
+      return;
+    }
+
+    item.empty();
+    const icon = item.createSpan({ cls: "penseed-stale-badge-icon" });
+    setIcon(icon, "alert-triangle");
+    item.createSpan({ text: staleBadgeText(this.staleChapterIds.length) });
+    item.setAttribute(
+      "title",
+      "Click to see which chapters are out of date and re-analyze them."
+    );
+    item.show();
+  }
+
+  private async openOutdatedChaptersModal(): Promise<void> {
+    const projectId = this.settings.lastProjectId;
+    if (!projectId) return;
+    const apiUrl = this.settings.apiUrl;
+    const token = await this.auth.getAccessToken();
+    if (!token) return;
+
+    let chapters: PenseedChapter[];
+    try {
+      chapters = await listChapters(apiUrl, token, projectId);
+    } catch (e) {
+      this.notifyError(e);
+      return;
+    }
+
+    const noteTitleByNumber = new Map<number, string>();
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      const n = extractChapterNumber(f.basename);
+      if (n !== null) noteTitleByNumber.set(n, f.basename);
+    }
+
+    const items = mapStaleToDisplay(chapters, noteTitleByNumber);
+    if (items.length === 0) {
+      notify("No outdated chapters.");
+      return;
+    }
+
+    const ids = staleChapterIds(chapters);
+    new OutdatedChaptersModal(this.app, items, () =>
+      this.batchReanalyze(apiUrl, token, projectId, ids)
+    ).open();
   }
 }
