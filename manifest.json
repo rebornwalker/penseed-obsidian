@@ -1,9 +1,9 @@
 {
   "id": "penseed",
   "name": "Penseed",
-  "version": "1.0.49",
+  "version": "1.0.50",
   "minAppVersion": "1.13.0",
-  "description": "Foreshadowing and story consistency tracker for novelists and fiction writers. Analyze notes for plot threads, characters, and world rules during novel writing, then track every clue to its payoff.",
+  "description": "Track what your reader knows — separate from what each character knows — plus every foreshadowing, character, and world rule. Never lose a thread or spoil your own mystery.",
   "author": "Penseed",
   "authorUrl": "https://penseed.app",
   "isDesktopOnly": false

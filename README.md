@@ -1,10 +1,12 @@
 # Penseed Obsidian Plugin
 
-**Never lose a plot thread — no matter how long your novel gets.**
+**Never lose a plot thread — and never spoil your own mystery.**
 
 Penseed is a consistency companion for novelists. It reads each chapter as you
 write it, remembers every planted thread, character detail, and world rule, and
-quietly warns you before a contradiction slips past.
+quietly warns you before a contradiction slips past. It also tracks **what your
+reader knows** at every point in the story — separate from what each character
+knows — so you never give away a twist too early.
 
 ## The problem with long novels
 
@@ -49,11 +51,28 @@ it never needs to keep your original text to do it.
   how they change chapter by chapter.
 - **Contradictions** — if an eye color, a kingdom's history, or a magic rule
   quietly changes, Penseed flags it before your readers do.
-- **World rules & reader knowledge** — so what each character knows stays
-  consistent with what they *should* know.
+- **World rules** — so names, places, and mechanics stay locked in place across
+  your entire series.
+- **Reader knowledge** — what the reader knows, and when they learned it, kept
+  separate from what each character knows (see below).
 - **Edits that ripple** — rewrite chapter 100 when you're already at chapter
   200, and Penseed tells you exactly which later chapters are affected, instead
   of making you re-check everything.
+
+## Never spoil your own mystery
+
+You know the killer is the butler. Your readers shouldn't — not until chapter
+forty. Penseed is the only writing tool that tracks **what your reader knows**
+separately from **what each character knows**.
+
+As you analyze each chapter, Penseed records what the reader has learned so far,
+and which characters know it too. Rewind the reader-knowledge timeline to any
+chapter and see exactly what a reader knows at that point — so you can:
+
+- catch a character casually mentioning a secret the reader hasn't discovered yet,
+- plant **dramatic irony** on purpose, where the reader knows more than a character,
+- keep track of what the reader *thinks* they know — including things they've
+  only suspected, or misunderstood.
 
 ## How to use it
 
@@ -101,6 +120,10 @@ If you're adding a novel you've already written — dozens or hundreds of chapte
 feature and Penseed will go through every chapter automatically, **from the first
 to the last, in the right order**. You don't have to keep track of where you are,
 or worry about skipping a chapter — the tool handles the order for you.
+
+Already brought the book in and revising later? Open the web app and use **Sync
+Changes** — paste your whole manuscript again and Penseed re-analyzes only the
+chapters that actually changed, skipping the rest at zero cost.
 
 ### When you edit an earlier chapter
 
