@@ -62,7 +62,7 @@ it never needs to keep your original text to do it.
 ## Never spoil your own mystery
 
 You know the killer is the butler. Your readers shouldn't — not until chapter
-forty. Penseed is the only writing tool that tracks **what your reader knows**
+forty. Penseed is the only consistency engine that tracks **what your reader knows**
 separately from **what each character knows**.
 
 As you analyze each chapter, Penseed records what the reader has learned so far,
