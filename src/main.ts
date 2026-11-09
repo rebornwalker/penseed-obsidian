@@ -264,7 +264,7 @@ export default class PenseedPlugin extends Plugin {
       (leaf) => new ForeshadowingBoardView(leaf, this)
     );
 
-    this.addRibbonIcon("layout-grid", "Open foreshadowing board", () => {
+    this.addRibbonIcon("layout-grid", "Open foreshadowing board with Penseed", () => {
       void this.activateBoardView();
     });
 
@@ -280,7 +280,7 @@ export default class PenseedPlugin extends Plugin {
 
     this.addCommand({
       id: "open-foreshadowing-board",
-      name: "Open Foreshadowing Board",
+      name: "Open Foreshadowing Board with Penseed",
       callback: () => this.activateBoardView(),
     });
 
