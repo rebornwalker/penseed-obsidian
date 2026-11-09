@@ -268,7 +268,7 @@ export default class PenseedPlugin extends Plugin {
       void this.activateBoardView();
     });
 
-    this.addRibbonIcon("book-open", "Sync whole manuscript", () => {
+    this.addRibbonIcon("book-open", "Sync whole manuscript with Penseed", () => {
       void this.syncManuscript();
     });
 
@@ -292,7 +292,7 @@ export default class PenseedPlugin extends Plugin {
 
     this.addCommand({
       id: "penseed-sync-manuscript",
-      name: "Sync whole manuscript",
+      name: "Sync whole manuscript with Penseed",
       callback: () => this.syncManuscript(),
     });
 
