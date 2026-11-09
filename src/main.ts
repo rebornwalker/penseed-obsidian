@@ -268,6 +268,10 @@ export default class PenseedPlugin extends Plugin {
       void this.activateBoardView();
     });
 
+    this.addRibbonIcon("book-open", "Sync whole manuscript", () => {
+      void this.syncManuscript();
+    });
+
     this.addCommand({
       id: "analyze-current-note",
       name: "Analyze Current Note",
