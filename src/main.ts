@@ -22,6 +22,13 @@ import {
   analyzeChapterResolution,
   updateForeshadowingStatus,
   cancelReanalysisBatch,
+  uploadBatchSyncChunk,
+  previewBatchSyncJob,
+  startBatchSyncJob,
+  cancelBatchSyncJob,
+  getBatchAnalysisStatus,
+  BatchSyncChapterInput,
+  BatchSyncPreview,
   PenseedProject,
   PenseedChapter,
   ForeshadowingSavePayload,
@@ -33,6 +40,8 @@ import {
   ConfirmReanalysisModal,
   BatchProgressModal,
   OutdatedChaptersModal,
+  ClassificationModal,
+  SyncPreviewModal,
   ReplayItem,
   ReanalysisBatchTaskState,
   ReanalysisTarget,
@@ -52,6 +61,12 @@ import {
 } from "./board";
 import { notify } from "./notify";
 import { extractChapterNumber } from "./chapter";
+import { assignPluginChapterNumbers } from "./chapterNumbering";
+import {
+  classifyManuscriptFiles,
+  detectLowDensityFolders,
+  ClassifiedFile,
+} from "./chapterClassifier";
 import { staleChapterIds, staleBadgeText, mapStaleToDisplay } from "./stale";
 
 function smartWordCount(text: string): number {
@@ -269,6 +284,12 @@ export default class PenseedPlugin extends Plugin {
       id: "reassign-folder-project",
       name: "Change project for this note's folder",
       callback: () => this.reassignFolderProject(),
+    });
+
+    this.addCommand({
+      id: "penseed-sync-manuscript",
+      name: "Sync whole manuscript",
+      callback: () => this.syncManuscript(),
     });
 
     // Persistent reminder: project-wide reports (element conflicts / World State /
@@ -1186,7 +1207,24 @@ export default class PenseedPlugin extends Plugin {
     void this.pollBatchTaskInBackground();
   }
 
-  private async pollBatchTaskInBackground(): Promise<void> {
+  private async pollBatchTaskInBackground(
+    statusFetcher: (
+      apiUrl: string,
+      token: string,
+      taskId: string
+    ) => Promise<{
+      status: string;
+      total: number;
+      completed: number;
+      failed: number;
+      current_chapter: number | null;
+      error: string | null;
+      result?: {
+        converged: boolean;
+        new_stale_chapter_ids: number[];
+      } | null;
+    }> = getReanalysisBatchStatus
+  ): Promise<void> {
     const task = this.batchTask;
     if (!task) return;
 
@@ -1203,7 +1241,7 @@ export default class PenseedPlugin extends Plugin {
     while (this.batchTask === task && task.status === "running") {
       try {
         const status = await withRetry(() =>
-          getReanalysisBatchStatus(apiUrl, token, task.taskId)
+          statusFetcher(apiUrl, token, task.taskId)
         );
 
         task.total = status.total ?? task.total;
@@ -1435,6 +1473,194 @@ export default class PenseedPlugin extends Plugin {
     this.settings.lastProjectId = chosen.id;
     await this.saveSettings();
     notify(`"${folderPath || "Vault root"}" now maps to "${chosen.title}".`);
+  }
+
+  private resolveFolderForProject(projectId: number): string | null {
+    for (const [folder, id] of Object.entries(this.settings.folderProjectMap)) {
+      if (id === projectId) return folder;
+    }
+    return null;
+  }
+
+  private collectManuscriptFiles(projectId: number): {
+    files: TFile[];
+    classified: ClassifiedFile[];
+  } {
+    const folderPath = this.resolveFolderForProject(projectId);
+    if (!folderPath) throw new Error("No folder mapped for this project");
+    const files = this.app.vault
+      .getMarkdownFiles()
+      .filter((f) => f.path.startsWith(folderPath));
+    const inputs = files.map((f) => ({
+      path: f.path,
+      basename: f.basename,
+      number: extractChapterNumber(f.basename),
+    }));
+    const excludePaths =
+      this.settings.chapterRules[projectId]?.excludePaths ?? [];
+    // 信号 2（文件夹密度）：低密度一级子文件夹建议排除，供预览勾选「记住排除」持久化。
+    const lowDensity = detectLowDensityFolders(
+      files.map((f) => f.path),
+      folderPath
+    );
+    const mergedExcludes = [
+      ...excludePaths,
+      ...lowDensity.filter((d) => !excludePaths.includes(d)),
+    ];
+    const classified = classifyManuscriptFiles(
+      inputs,
+      mergedExcludes,
+      folderPath
+    );
+    return { files, classified };
+  }
+
+  private async buildManuscriptChapters(
+    files: TFile[],
+    classified: ClassifiedFile[],
+    includedPaths: Set<string>
+  ): Promise<BatchSyncChapterInput[][]> {
+    const keptFiles = files.filter((_, i) =>
+      includedPaths.has(classified[i].path)
+    );
+    const kept = classified.filter((c) => includedPaths.has(c.path));
+    const assigned = assignPluginChapterNumbers(
+      kept.map((c) => ({ basename: c.basename, number: c.number }))
+    );
+    const chapters: BatchSyncChapterInput[] = [];
+    for (let i = 0; i < keptFiles.length; i++) {
+      const content = await this.app.vault.read(keptFiles[i]);
+      chapters.push({
+        chapter_number: assigned[i].number,
+        title: keptFiles[i].basename,
+        content,
+      });
+    }
+    const chunks: BatchSyncChapterInput[][] = [];
+    for (let i = 0; i < chapters.length; i += 100) {
+      chunks.push(chapters.slice(i, i + 100));
+    }
+    return chunks;
+  }
+
+  private async syncManuscript(): Promise<void> {
+    const { apiUrl } = this.settings;
+    const token = await this.auth.getAccessToken();
+    if (!token) {
+      notify("Please connect to Penseed in Settings first.");
+      return;
+    }
+    const projectId = this.settings.lastProjectId;
+    if (!projectId) {
+      notify("No project mapped. Open a note and analyze once first.");
+      return;
+    }
+
+    // 0) 分类（廉价，不读内容）→ 预览确认 D
+    let collected: { files: TFile[]; classified: ClassifiedFile[] };
+    try {
+      collected = this.collectManuscriptFiles(projectId);
+    } catch (e) {
+      notify(
+        e instanceof Error
+          ? e.message
+          : "No folder mapped for this project."
+      );
+      return;
+    }
+    const { files, classified } = collected;
+    if (files.length === 0) {
+      notify("No markdown notes found in the project folder.");
+      return;
+    }
+
+    const confirmed = await this.confirmClassification(classified);
+    if (!confirmed) return;
+    const { includedPaths, persistExcludes } = confirmed;
+    if (persistExcludes.length > 0) {
+      this.settings.chapterRules[projectId] = { excludePaths: persistExcludes };
+      await this.saveSettings();
+    }
+
+    const chunks = await this.buildManuscriptChapters(
+      files,
+      classified,
+      includedPaths
+    );
+    if (chunks.length === 0) {
+      notify("No chapters selected.");
+      return;
+    }
+
+    try {
+      // 1) 分片上传：首片 jobId=null 建 job，末片 isLast=true 置 ready
+      let jobId: string | null = null;
+      for (let i = 0; i < chunks.length; i++) {
+        const res = await withRetry(() =>
+          uploadBatchSyncChunk(
+            apiUrl,
+            token,
+            projectId,
+            jobId,
+            i,
+            i === chunks.length - 1,
+            chunks[i]
+          )
+        );
+        jobId = res.job_id;
+      }
+
+      // 2) 预览分类（零 LLM）：new/unchanged/changed + 漂移提示 + 配额估算
+      const preview = await withRetry(() =>
+        previewBatchSyncJob(apiUrl, token, projectId, jobId!)
+      );
+
+      // 3) 用户确认；取消则中止 job
+      const ok = await this.confirmSyncPreview(preview);
+      if (!ok) {
+        await withRetry(() => cancelBatchSyncJob(apiUrl, token, jobId!));
+        return;
+      }
+
+      // 4) 启动同步（task_id == job_id）+ 复用轮询
+      const started = await withRetry(() =>
+        startBatchSyncJob(apiUrl, token, projectId, jobId!)
+      );
+      this.batchTask = {
+        taskId: started.task_id,
+        projectId,
+        total: started.total ?? 0,
+        completed: 0,
+        failed: 0,
+        currentChapterNumber: null,
+        status: "running",
+        error: null,
+        converged: null,
+        newStaleChapterIds: [],
+        skippedNoNote: 0,
+      };
+      this.renderStatus();
+      notify(
+        "Manuscript sync started. It runs in the background — check the status bar for progress."
+      );
+      void this.pollBatchTaskInBackground(getBatchAnalysisStatus);
+    } catch (e) {
+      this.notifyError(e);
+    }
+  }
+
+  private confirmClassification(
+    classified: ClassifiedFile[]
+  ): Promise<{ includedPaths: Set<string>; persistExcludes: string[] } | null> {
+    return new Promise((resolve) => {
+      new ClassificationModal(this.app, classified, resolve).open();
+    });
+  }
+
+  private confirmSyncPreview(preview: BatchSyncPreview): Promise<boolean> {
+    return new Promise((resolve) => {
+      new SyncPreviewModal(this.app, preview, resolve).open();
+    });
   }
 
   private chooseProject(

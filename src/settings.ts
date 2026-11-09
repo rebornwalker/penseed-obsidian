@@ -7,6 +7,7 @@ export interface PenseedSettings {
   apiUrl: string;
   lastProjectId: number | null;
   folderProjectMap: Record<string, number>;
+  chapterRules: Record<number, { excludePaths: string[] }>;
   changeReminderMinChars: number;
   changeReminderRatioPct: number;
   webUrl: string;
@@ -16,6 +17,7 @@ export const DEFAULT_SETTINGS: PenseedSettings = {
   apiUrl: "https://api.penseed.app",
   lastProjectId: null,
   folderProjectMap: {},
+  chapterRules: {},
   changeReminderMinChars: 50,
   changeReminderRatioPct: 1,
   webUrl: "https://penseed.app",

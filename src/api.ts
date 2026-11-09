@@ -115,7 +115,7 @@ async function requestRaw(
   apiUrl: string,
   token: string,
   path: string,
-  method: "GET" | "POST" | "PUT",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   body?: unknown
 ): Promise<{ status: number; json: unknown }> {
   const url = `${apiUrl.replace(/\/+$/, "")}${path}`;
@@ -176,7 +176,7 @@ async function request<T>(
   apiUrl: string,
   token: string,
   path: string,
-  method: "GET" | "POST" | "PUT",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   body?: unknown
 ): Promise<T> {
   const { json } = await requestRaw(apiUrl, token, path, method, body);
@@ -681,5 +681,99 @@ export async function analyzeChapterResolution(
       project_id: projectId,
       chapter_id: chapterId,
     }
+  );
+}
+
+/**
+ * Phase 0.37: bulk-sync 整本同步（复用 web 端 batchAnalysisService 的五端点）。
+ * 分片上传 → preview（零 LLM hash 分类）→ start（任务与 job 同 id）→ 轮询 status。
+ */
+
+export interface BatchSyncChapterInput {
+  chapter_number: number | null;
+  title?: string | null;
+  content: string;
+}
+
+export interface BatchSyncPreview {
+  new: number;
+  unchanged: number;
+  changed: number;
+  missing_in_project: number;
+  estimated_credits: number;
+  drift_detected: boolean;
+  drift_note: string;
+}
+
+export interface BatchTaskStatus {
+  task_id: string;
+  status: "analyzing" | "paused" | "completed" | "error" | "cancelled";
+  total: number;
+  completed: number;
+  failed: number;
+  current_chapter: number | null;
+  error: string | null;
+}
+
+export async function uploadBatchSyncChunk(
+  apiUrl: string,
+  token: string,
+  projectId: number,
+  jobId: string | null,
+  chunkIndex: number,
+  isLast: boolean,
+  chapters: BatchSyncChapterInput[]
+): Promise<{ job_id: string; status: string; total_chapters: number }> {
+  return request(apiUrl, token, "/api/foreshadowing/batch-sync", "POST", {
+    project_id: projectId,
+    job_id: jobId,
+    chunk_index: chunkIndex,
+    is_last: isLast,
+    chapters,
+  });
+}
+
+export async function previewBatchSyncJob(
+  apiUrl: string,
+  token: string,
+  projectId: number,
+  jobId: string
+): Promise<BatchSyncPreview> {
+  return request(apiUrl, token, "/api/foreshadowing/batch-sync/preview", "POST", {
+    project_id: projectId,
+    job_id: jobId,
+  });
+}
+
+export async function startBatchSyncJob(
+  apiUrl: string,
+  token: string,
+  projectId: number,
+  jobId: string
+): Promise<{ task_id: string; status: string; total: number }> {
+  return request(apiUrl, token, "/api/foreshadowing/batch-sync/start", "POST", {
+    project_id: projectId,
+    job_id: jobId,
+  });
+}
+
+export async function cancelBatchSyncJob(
+  apiUrl: string,
+  token: string,
+  jobId: string
+): Promise<{ job_id: string; status: string }> {
+  return request(apiUrl, token, `/api/foreshadowing/batch-sync/${jobId}`, "DELETE");
+}
+
+export async function getBatchAnalysisStatus(
+  apiUrl: string,
+  token: string,
+  taskId: string
+): Promise<BatchTaskStatus> {
+  return request(
+    apiUrl,
+    token,
+    `/api/foreshadowing/batch-analyze/${taskId}/status`,
+    "GET"
   );
 }

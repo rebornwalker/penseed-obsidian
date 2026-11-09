@@ -1,7 +1,8 @@
 import { App, Modal } from "obsidian";
-import { ApiError } from "./api";
+import { ApiError, BatchSyncPreview } from "./api";
 import { notify } from "./notify";
 import type { StaleDisplayItem } from "./stale";
+import type { ClassifiedFile } from "./chapterClassifier";
 
 export interface ReplayItem {
   chapterNumber: number;
@@ -636,6 +637,240 @@ export class OutdatedChaptersModal extends Modal {
   onClose(): void {
     this.resizeCleanup?.();
     this.resizeCleanup = null;
+    this.contentEl.empty();
+  }
+}
+
+export interface ClassificationResult {
+  includedPaths: Set<string>;
+  persistExcludes: string[];
+}
+
+function classificationReason(f: ClassifiedFile): string {
+  if (f.number !== null) return "numbered";
+  if (f.defaultInclude) return "front matter";
+  return "no number — likely a note";
+}
+
+/**
+ * Phase 0.37 confirmation gate D: language-independent classification preview.
+ * Chapters (auto) are locked in; "needs-confirm" notes are checkboxes preset to
+ * the classifier's defaultInclude; excluded notes are grayed out. A "remember
+ * excluded notes" checkbox persists the exclusion list (scheme C).
+ */
+export class ClassificationModal extends Modal {
+  private classified: ClassifiedFile[];
+  private resolve: (result: ClassificationResult | null) => void;
+  private settled = false;
+  private checks = new Map<string, HTMLInputElement>();
+  private rememberBox: HTMLInputElement | null = null;
+
+  constructor(
+    app: App,
+    classified: ClassifiedFile[],
+    resolve: (result: ClassificationResult | null) => void
+  ) {
+    super(app);
+    this.classified = classified;
+    this.resolve = resolve;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    this.modalEl.addClass("penseed-result-modal");
+    contentEl.addClass("penseed-result");
+
+    contentEl.createEl("h2", { text: "Sync whole manuscript" });
+    const hint = contentEl.createDiv({
+      text: "Chapters are included automatically. Review the remaining notes before syncing.",
+    });
+    hint.addClass("penseed-unchanged-notice");
+
+    const chapters = this.classified.filter((f) => f.verdict === "chapter");
+    const review = this.classified.filter((f) => f.verdict === "needs-confirm");
+    const excluded = this.classified.filter((f) => f.verdict === "excluded");
+
+    const list = contentEl.createEl("ul");
+    list.addClass("penseed-item-list");
+    list.addClass("penseed-grow");
+
+    if (chapters.length > 0) {
+      this.renderGroup(list, "Chapters (auto)", chapters, true);
+    }
+    if (review.length > 0) {
+      this.renderGroup(list, "Review these notes", review, false);
+    }
+    if (excluded.length > 0) {
+      this.renderGroup(list, "Excluded", excluded, false, true);
+    }
+
+    const rememberRow = contentEl.createDiv({ cls: "penseed-confirm-actions" });
+    const rememberLabel = rememberRow.createEl("label");
+    this.rememberBox = rememberLabel.createEl("input", { type: "checkbox" });
+    rememberLabel.appendText(" Remember excluded notes for future syncs");
+
+    const actions = contentEl.createDiv({ cls: "penseed-confirm-actions" });
+    const syncBtn = actions.createEl("button", { text: "Sync", cls: "mod-cta" });
+    syncBtn.addEventListener("click", () => this.settle());
+    const cancelBtn = actions.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => this.settleCancel());
+  }
+
+  private renderGroup(
+    list: HTMLElement,
+    title: string,
+    files: ClassifiedFile[],
+    locked: boolean,
+    muted = false
+  ): void {
+    const header = list.createEl("li");
+    header.addClass("penseed-item-row");
+    header.createSpan({ text: title, cls: "penseed-batch-tag" });
+
+    for (const f of files) {
+      const li = list.createEl("li");
+      li.addClass("penseed-item-row");
+      if (muted) li.addClass("penseed-unchanged-notice");
+
+      const label = li.createEl("label");
+      const box = label.createEl("input", { type: "checkbox" });
+      this.checks.set(f.path, box);
+      if (locked) {
+        box.checked = true;
+        box.disabled = true;
+      } else if (muted) {
+        box.checked = false;
+        box.disabled = true;
+      } else {
+        box.checked = f.defaultInclude;
+      }
+
+      const text = label.createSpan();
+      text.setText(f.basename);
+      if (!locked && !muted) {
+        const reason = label.createSpan({ cls: "penseed-batch-tag" });
+        reason.setText(` (${classificationReason(f)})`);
+      }
+    }
+  }
+
+  private settle(): void {
+    if (this.settled) return;
+    this.settled = true;
+    const includedPaths = new Set<string>();
+    const excludedThisRound: string[] = [];
+    for (const f of this.classified) {
+      const box = this.checks.get(f.path);
+      if (box?.checked) {
+        includedPaths.add(f.path);
+      } else {
+        excludedThisRound.push(f.path);
+      }
+    }
+    const persistExcludes = this.rememberBox?.checked
+      ? excludedThisRound
+      : [];
+    this.resolve({ includedPaths, persistExcludes });
+    this.close();
+  }
+
+  private settleCancel(): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.resolve(null);
+    this.close();
+  }
+
+  onClose(): void {
+    if (!this.settled) {
+      this.settled = true;
+      this.resolve(null);
+    }
+    this.contentEl.empty();
+  }
+}
+
+/**
+ * Phase 0.37: pre-start preview of the bulk-sync diff (new/unchanged/changed +
+ * estimated credits + drift note). Confirm to start, cancel to abort the job.
+ */
+export class SyncPreviewModal extends Modal {
+  private preview: BatchSyncPreview;
+  private resolve: (ok: boolean) => void;
+  private settled = false;
+
+  constructor(
+    app: App,
+    preview: BatchSyncPreview,
+    resolve: (ok: boolean) => void
+  ) {
+    super(app);
+    this.preview = preview;
+    this.resolve = resolve;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("penseed-confirm");
+
+    contentEl.createEl("h2", { text: "Start sync?" });
+
+    const p = this.preview;
+    const summary = contentEl.createDiv({ cls: "penseed-batch-meta" });
+    summary.createDiv({
+      cls: "penseed-batch-tag",
+      text: `${p.new} new`,
+    });
+    summary.createDiv({
+      cls: "penseed-batch-tag",
+      text: `${p.unchanged} unchanged`,
+    });
+    summary.createDiv({
+      cls: "penseed-batch-tag",
+      text: `${p.changed} changed`,
+    });
+    if (p.missing_in_project > 0) {
+      summary.createDiv({
+        cls: "penseed-batch-tag",
+        text: `${p.missing_in_project} missing in project`,
+      });
+    }
+
+    contentEl.createDiv({
+      text: `Estimated cost: ${p.estimated_credits} credits.`,
+    });
+
+    if (p.drift_detected) {
+      const drift = contentEl.createDiv({
+        text: p.drift_note || "Chapter numbering may have drifted.",
+      });
+      drift.addClass("penseed-unchanged-notice");
+    }
+
+    const actions = contentEl.createDiv({ cls: "penseed-confirm-actions" });
+    const startBtn = actions.createEl("button", {
+      text: "Start sync",
+      cls: "mod-cta",
+    });
+    startBtn.addEventListener("click", () => this.settle(true));
+    const cancelBtn = actions.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => this.settle(false));
+  }
+
+  private settle(ok: boolean): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.resolve(ok);
+    this.close();
+  }
+
+  onClose(): void {
+    if (!this.settled) {
+      this.settled = true;
+      this.resolve(false);
+    }
     this.contentEl.empty();
   }
 }
