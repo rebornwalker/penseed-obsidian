@@ -664,6 +664,7 @@ export class ClassificationModal extends Modal {
   private settled = false;
   private checks = new Map<string, HTMLInputElement>();
   private rememberBox: HTMLInputElement | null = null;
+  private resizeCleanup: (() => void) | null = null;
 
   constructor(
     app: App,
@@ -715,6 +716,8 @@ export class ClassificationModal extends Modal {
     syncBtn.addEventListener("click", () => this.settle());
     const cancelBtn = actions.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => this.settleCancel());
+
+    this.resizeCleanup = installModalResize(this);
   }
 
   private renderGroup(
@@ -783,6 +786,8 @@ export class ClassificationModal extends Modal {
   }
 
   onClose(): void {
+    this.resizeCleanup?.();
+    this.resizeCleanup = null;
     if (!this.settled) {
       this.settled = true;
       this.resolve(null);
