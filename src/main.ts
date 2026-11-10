@@ -170,22 +170,35 @@ function diffChangedChars(oldText: string, newText: string): number {
 class ProjectSuggestModal extends SuggestModal<PenseedProject> {
   private projects: PenseedProject[];
   private resolve: (project: PenseedProject | null) => void;
+  private preferredId: number | null;
   private settled = false;
 
   constructor(
     app: import("obsidian").App,
     projects: PenseedProject[],
-    resolve: (project: PenseedProject | null) => void
+    resolve: (project: PenseedProject | null) => void,
+    preferredId?: number | null
   ) {
     super(app);
     this.projects = projects;
     this.resolve = resolve;
+    this.preferredId = preferredId ?? null;
     this.setPlaceholder("Choose a Penseed project");
   }
 
   getSuggestions(query: string): PenseedProject[] {
     const q = query.toLowerCase();
-    return this.projects.filter((p) => p.title.toLowerCase().includes(q));
+    const matches = this.projects.filter((p) =>
+      p.title.toLowerCase().includes(q)
+    );
+    // 无输入时把上次用过的项目排最前，回车即选；仍可输入/方向键换选。
+    if (q === "" && this.preferredId != null) {
+      const preferred = matches.find((p) => p.id === this.preferredId);
+      if (preferred) {
+        return [preferred, ...matches.filter((p) => p.id !== this.preferredId)];
+      }
+    }
+    return matches;
   }
 
   renderSuggestion(project: PenseedProject, el: HTMLElement): void {
@@ -1491,10 +1504,14 @@ export default class PenseedPlugin extends Plugin {
     classified: ClassifiedFile[];
   } {
     const folderPath = this.resolveFolderForProject(projectId);
-    if (!folderPath) throw new Error("No folder mapped for this project");
+    if (folderPath === null) {
+      throw new Error("No folder mapped for this project");
+    }
+    // 目录边界：folder "MOBY-DICK" 不得误纳 "MOBY-DICK-3-for-test" 的子文件。
+    const prefix = folderPath === "" ? "" : folderPath + "/";
     const files = this.app.vault
       .getMarkdownFiles()
-      .filter((f) => f.path.startsWith(folderPath));
+      .filter((f) => f.path.startsWith(prefix));
     const inputs = files.map((f) => ({
       path: f.path,
       basename: f.basename,
@@ -1554,9 +1571,34 @@ export default class PenseedPlugin extends Plugin {
       notify("Please connect to Penseed in Settings first.");
       return;
     }
-    const projectId = this.settings.lastProjectId;
-    if (!projectId) {
-      notify("No project mapped. Open a note and analyze once first.");
+    // 先问用户 sync 哪个项目：多项目 vault 下 lastProjectId 静默决定会把不同项目的章节混在一起。
+    let projects: PenseedProject[];
+    try {
+      projects = await listProjects(apiUrl, token);
+    } catch (e) {
+      this.notifyError(e);
+      return;
+    }
+    if (projects.length === 0) {
+      notify("You don't have any projects yet. Create one at Penseed first.");
+      return;
+    }
+    const chosen = await this.chooseProject(
+      projects,
+      this.settings.lastProjectId
+    );
+    if (chosen === null) return;
+    const projectId = chosen.id;
+    this.settings.lastProjectId = projectId;
+    await this.saveSettings();
+
+    // 该项目必须已关联 vault 文件夹，否则无法定位章节范围。
+    if (this.resolveFolderForProject(projectId) === null) {
+      notify(
+        `"${chosen.title}" isn't linked to a folder in this vault yet. ` +
+          `Open one of its chapter notes and analyze it once, or run ` +
+          `"Change project for this note's folder".`
+      );
       return;
     }
 
@@ -1668,10 +1710,11 @@ export default class PenseedPlugin extends Plugin {
   }
 
   private chooseProject(
-    projects: PenseedProject[]
+    projects: PenseedProject[],
+    preferredId?: number | null
   ): Promise<PenseedProject | null> {
     return new Promise((resolve) => {
-      new ProjectSuggestModal(this.app, projects, resolve).open();
+      new ProjectSuggestModal(this.app, projects, resolve, preferredId).open();
     });
   }
 
