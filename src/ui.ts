@@ -717,9 +717,23 @@ export class ClassificationModal extends Modal {
     });
     hint.addClass("penseed-unchanged-notice");
 
-    const chapters = this.classified.filter((f) => f.verdict === "chapter");
-    const review = this.classified.filter((f) => f.verdict === "needs-confirm");
-    const excluded = this.classified.filter((f) => f.verdict === "excluded");
+    // 按章节号升序展示（无编号参考 note 排最后，按 basename 字典序），
+    // 避免 getMarkdownFiles() 的 vault 枚举顺序导致章节乱序。
+    // 主键按章节号升序（纯数字减法，语言无关）；无编号参考 note 之间按
+    // code-unit 字典序比较（< / >），避免 localeCompare 依赖运行环境 locale。
+    const byNumber = (a: ClassifiedFile, b: ClassifiedFile) =>
+      (a.number ?? Number.MAX_SAFE_INTEGER) -
+        (b.number ?? Number.MAX_SAFE_INTEGER) ||
+      (a.basename < b.basename ? -1 : a.basename > b.basename ? 1 : 0);
+    const chapters = this.classified
+      .filter((f) => f.verdict === "chapter")
+      .sort(byNumber);
+    const review = this.classified
+      .filter((f) => f.verdict === "needs-confirm")
+      .sort(byNumber);
+    const excluded = this.classified
+      .filter((f) => f.verdict === "excluded")
+      .sort(byNumber);
 
     const list = contentEl.createEl("ul");
     list.addClass("penseed-item-list");
