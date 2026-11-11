@@ -36,6 +36,11 @@
   opacity: 0.6;
 }
 
+.penseed-result .penseed-batch-button-primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
 .penseed-result .penseed-manage-notice {
   margin-top: 1em;
   padding: 0.6em 0.8em;

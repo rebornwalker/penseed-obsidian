@@ -719,6 +719,13 @@ export interface BatchSyncResult {
   new_stale_chapter_ids: number[];
 }
 
+export interface PendingFanout {
+  chapter_ids: number[];
+  wave: number;
+  chapter_count: number;
+  estimated_credits: number;
+}
+
 export interface BatchTaskStatus {
   task_id: string;
   status: "analyzing" | "paused" | "completed" | "error" | "cancelled";
@@ -728,6 +735,8 @@ export interface BatchTaskStatus {
   current_chapter: number | null;
   current_wave?: number | null;
   credits_used?: number | null;
+  pause_reason?: string | null;
+  pending_fanout?: PendingFanout | null;
   error: string | null;
   result?: BatchSyncResult | null;
 }
@@ -792,5 +801,19 @@ export async function getBatchAnalysisStatus(
     token,
     `/api/foreshadowing/batch-analyze/${taskId}/status`,
     "GET"
+  );
+}
+
+// Phase 0.55: 大扇出暂停后用户点「继续」，恢复下游级联。
+export async function resumeCascade(
+  apiUrl: string,
+  token: string,
+  taskId: string
+): Promise<{ task_id: string; status: string; chapter_count: number }> {
+  return request(
+    apiUrl,
+    token,
+    `/api/foreshadowing/batch-analyze/${taskId}/resume-cascade`,
+    "POST"
   );
 }

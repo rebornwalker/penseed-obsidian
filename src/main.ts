@@ -27,8 +27,10 @@ import {
   startBatchSyncJob,
   cancelBatchSyncJob,
   getBatchAnalysisStatus,
+  resumeCascade,
   BatchSyncChapterInput,
   BatchSyncPreview,
+  PendingFanout,
   PenseedProject,
   PenseedChapter,
   ForeshadowingSavePayload,
@@ -1230,6 +1232,8 @@ export default class PenseedPlugin extends Plugin {
       stoppedByLimit: null,
       stoppedReason: null,
       remainingStaleCount: null,
+      pauseReason: null,
+      pendingFanout: null,
     };
 
     this.renderStatus();
@@ -1252,6 +1256,8 @@ export default class PenseedPlugin extends Plugin {
       current_chapter: number | null;
       current_wave?: number | null;
       credits_used?: number | null;
+      pause_reason?: string | null;
+      pending_fanout?: PendingFanout | null;
       error: string | null;
       result?: {
         converged: boolean;
@@ -1314,6 +1320,16 @@ export default class PenseedPlugin extends Plugin {
           task.status = "cancelled";
           break;
         }
+        // Phase 0.55: 大扇出暂停（fanout）需用户决策；限速暂停后台自动 resume，继续轮询即可。
+        if (
+          status.status === "paused" &&
+          (status.pause_reason ?? "rate_limit") === "fanout"
+        ) {
+          task.status = "paused";
+          task.pauseReason = "fanout";
+          task.pendingFanout = status.pending_fanout ?? null;
+          break;
+        }
       } catch (e) {
         // Non-retryable (4xx/402/429) or retries exhausted. Surface and stop.
         task.status = "error";
@@ -1329,6 +1345,18 @@ export default class PenseedPlugin extends Plugin {
 
     // Plugin unloaded mid-poll: the task was detached; do not touch the UI.
     if (this.batchTask !== task) return;
+
+    // Phase 0.55: 大扇出暂停——保留任务引用并弹出决策 UI，等用户点「继续/停在这里」。
+    if (task.status === "paused") {
+      this.renderStatus();
+      notify(
+        `Large re-analysis required — ${
+          task.pendingFanout?.chapter_count ?? 0
+        } downstream chapters. Choose Continue or Stop in the dialog.`
+      );
+      this.openBatchProgressModal();
+      return;
+    }
 
     this.notifyBatchFinished(task);
     void this.refreshStaleBadge();
@@ -1450,6 +1478,16 @@ export default class PenseedPlugin extends Plugin {
         "title",
         task.error || "Batch re-analysis failed"
       );
+    } else if (task.status === "paused") {
+      setIcon(icon, "alert-circle");
+      const count = task.pendingFanout?.chapter_count ?? 0;
+      this.batchStatusItem.createSpan({
+        text: `Review needed — ${count} chapters`,
+      });
+      this.batchStatusItem.setAttribute(
+        "title",
+        "Large re-analysis paused — click to continue or stop"
+      );
     } else {
       setIcon(icon, "ban");
       this.batchStatusItem.createSpan({ text: "Re-analysis cancelled" });
@@ -1513,8 +1551,55 @@ export default class PenseedPlugin extends Plugin {
         } catch (e) {
           this.notifyError(e);
         }
-      }
+      },
+      () => this.resumeBatchCascade(),
+      () => this.stopBatchCascade()
     ).open();
+  }
+
+  // Phase 0.55: 用户点「继续」恢复大扇出级联。
+  private async resumeBatchCascade(): Promise<void> {
+    const task = this.batchTask;
+    if (!task || task.status !== "paused") return;
+    const token = await this.auth.getAccessToken();
+    if (!token) return;
+    try {
+      await resumeCascade(this.settings.apiUrl, token, task.taskId);
+    } catch (e) {
+      this.notifyError(e);
+      return;
+    }
+    task.status = "running";
+    task.pauseReason = null;
+    task.pendingFanout = null;
+    this.renderStatus();
+    notify("Cascade resumed — re-analyzing downstream chapters.");
+    void this.pollBatchTaskInBackground(getBatchAnalysisStatus);
+  }
+
+  // Phase 0.55: 用户点「停在这里」中止级联（保留已完成章）。
+  private async stopBatchCascade(): Promise<void> {
+    const task = this.batchTask;
+    if (!task || task.status !== "paused") return;
+    const token = await this.auth.getAccessToken();
+    if (!token) return;
+    try {
+      await cancelBatchSyncJob(this.settings.apiUrl, token, task.taskId);
+    } catch (e) {
+      this.notifyError(e);
+    }
+    task.status = "cancelled";
+    this.renderStatus();
+    notify(
+      `Re-analysis stopped — ${task.completed} chapter${
+        task.completed === 1 ? "" : "s"
+      } kept.`
+    );
+    void this.refreshStaleBadge();
+    if (this.batchTask === task) {
+      this.batchTask = null;
+      this.renderStatus();
+    }
   }
 
   private async reassignFolderProject(): Promise<void> {
@@ -1746,6 +1831,8 @@ export default class PenseedPlugin extends Plugin {
         stoppedByLimit: null,
         stoppedReason: null,
         remainingStaleCount: null,
+        pauseReason: null,
+        pendingFanout: null,
       };
       this.renderStatus();
       notify(

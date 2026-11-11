@@ -1,5 +1,5 @@
 import { App, Modal } from "obsidian";
-import { ApiError, BatchSyncPreview } from "./api";
+import { ApiError, BatchSyncPreview, PendingFanout } from "./api";
 import { notify } from "./notify";
 import type { StaleDisplayItem } from "./stale";
 import type { ClassifiedFile } from "./chapterClassifier";
@@ -17,7 +17,7 @@ export interface ReanalysisBatchTaskState {
   completed: number;
   failed: number;
   currentChapterNumber: number | null;
-  status: "running" | "completed" | "error" | "cancelled";
+  status: "running" | "paused" | "completed" | "error" | "cancelled";
   error: string | null;
   converged: boolean | null;
   newStaleChapterIds: number[];
@@ -28,6 +28,9 @@ export interface ReanalysisBatchTaskState {
   stoppedByLimit: boolean | null;
   stoppedReason: "converged" | "limit" | "no_content" | "cancelled" | null;
   remainingStaleCount: number | null;
+  // Phase 0.55: 大扇出暂停决策态。
+  pauseReason: "fanout" | "rate_limit" | null;
+  pendingFanout: PendingFanout | null;
 }
 
 export interface ForeshadowingSummaryItem {
@@ -374,17 +377,23 @@ export class ReanalysisResultModal extends Modal {
 export class BatchProgressModal extends Modal {
   private getState: () => ReanalysisBatchTaskState | null;
   private onCancel: (() => Promise<void>) | null;
+  private onResume: (() => Promise<void>) | null;
+  private onStop: (() => Promise<void>) | null;
   private interval: number | null = null;
   private resizeCleanup: (() => void) | null = null;
 
   constructor(
     app: App,
     getState: () => ReanalysisBatchTaskState | null,
-    onCancel: (() => Promise<void>) | null = null
+    onCancel: (() => Promise<void>) | null = null,
+    onResume: (() => Promise<void>) | null = null,
+    onStop: (() => Promise<void>) | null = null
   ) {
     super(app);
     this.getState = getState;
     this.onCancel = onCancel;
+    this.onResume = onResume;
+    this.onStop = onStop;
   }
 
   onOpen(): void {
@@ -511,6 +520,42 @@ export class BatchProgressModal extends Modal {
         cls: "penseed-batch-detail",
         text: state.error || "Batch re-analysis failed.",
       });
+    } else if (state.status === "paused") {
+      const count =
+        state.pendingFanout?.chapter_count ??
+        state.pendingFanout?.chapter_ids?.length ??
+        0;
+      body.createDiv({
+        cls: "penseed-batch-status",
+        text: `Large re-analysis — ${count} downstream chapter${plural(count)}`,
+      });
+      body.createDiv({
+        cls: "penseed-batch-detail",
+        text: `This edit affects about ${count} downstream chapter${plural(
+          count
+        )}. Continue to re-analyze them all, or stop here?`,
+      });
+
+      if (this.onStop || this.onResume) {
+        const footer = contentEl.createDiv({ cls: "penseed-batch-footer" });
+        if (this.onStop) {
+          const stop = footer.createEl("button", { text: "Stop here" });
+          stop.addClass("penseed-batch-button");
+          stop.addEventListener("click", () => {
+            void this.onStop!();
+          });
+        }
+        if (this.onResume) {
+          const cont = footer.createEl("button", {
+            text: `Continue (${count} chapters)`,
+          });
+          cont.addClass("penseed-batch-button");
+          cont.addClass("penseed-batch-button-primary");
+          cont.addEventListener("click", () => {
+            void this.onResume!();
+          });
+        }
+      }
     } else {
       body.createDiv({
         cls: "penseed-batch-detail",
@@ -704,9 +749,10 @@ function classificationReason(f: ClassifiedFile): string {
 /**
  * Phase 0.37 confirmation gate D: language-independent classification preview.
  * Chapters (auto) are pre-selected and editable; "needs-confirm" notes are
- * checkboxes preset to the classifier's defaultInclude; excluded notes are
- * grayed out and non-editable. A "remember excluded notes" checkbox persists
- * the note-exclusion list (scheme C) — chapters are never persisted as excluded.
+ * checkboxes preset to the classifier's defaultInclude; excluded notes default
+ * unchecked but stay editable so the author can override the classifier.
+ * A "remember excluded notes" checkbox persists the note-exclusion list
+ * (scheme C) — chapters are never persisted as excluded.
  */
 export class ClassificationModal extends Modal {
   private classified: ClassifiedFile[];
@@ -734,8 +780,37 @@ export class ClassificationModal extends Modal {
     contentEl.addClass("penseed-result");
 
     contentEl.createEl("h2", { text: "Sync whole manuscript" });
+
+    // 功能介绍：是什么 / 好处 / 威力 / 省 token / 哪些章会被分析。
+    const intro = contentEl.createDiv({ cls: "penseed-manuscript-intro" });
+    intro.createDiv({
+      text: "Sync your whole manuscript in one pass. Penseed reads the notes in this project's folder and, for every chapter, extracts:",
+    });
+    const bullets = intro.createEl("ul");
+    bullets.createEl("li", {
+      text: "Foreshadowings — every plant and payoff, tracked across chapters.",
+    });
+    bullets.createEl("li", {
+      text: "Elements — characters, objects, and places, checked book-wide for consistency.",
+    });
+    bullets.createEl("li", {
+      text: "Resolutions — how each plot thread develops and resolves.",
+    });
+
+    // 省 token：未改章节（hash 命中且非 stale）零 token 跳过，配额只按 new + changed 计。
+    const saving = contentEl.createDiv();
+    saving.addClass("penseed-unchanged-notice");
+    saving.createDiv({
+      text: "Pay only for what changed",
+      cls: "penseed-warning-title",
+    });
+    saving.createDiv({
+      text: "Penseed compares each chapter against your last analysis and skips unchanged chapters automatically — you only spend AI credits on chapters that are new or have actually changed. The next screen shows the exact count and estimated credits before anything runs.",
+    });
+
+    // 哪些章会被分析 / 不会被分析。
     const hint = contentEl.createDiv({
-      text: "Chapters are pre-selected — uncheck any to skip. Review the remaining notes before syncing.",
+      text: `Chapters (auto) are pre-selected and will be analyzed — uncheck any to skip. Under "Review these notes", tick notes that are real chapters. "Excluded" notes are left out by default, but you can tick them to include them anyway.`,
     });
     hint.addClass("penseed-unchanged-notice");
 
@@ -757,6 +832,18 @@ export class ClassificationModal extends Modal {
       .filter((f) => f.verdict === "excluded")
       .sort(byNumber);
 
+    // 有 excluded 时才解释为何排除：防止剧透 + 非正文 + 稀疏文件夹自动识别 + 历史排除。
+    if (excluded.length > 0) {
+      const whyExcluded = contentEl.createDiv({ cls: "penseed-manuscript-excluded" });
+      whyExcluded.createDiv({
+        text: "Why notes are excluded",
+        cls: "penseed-warning-title",
+      });
+      whyExcluded.createDiv({
+        text: "These are usually planning material, not story chapters — character sheets, world bibles, plot outlines. Penseed keeps them out so spoilers don't leak into your analysis, because they often reveal twists the reader shouldn't know yet. It also auto-detects sparse subfolders as likely reference material and remembers notes you've excluded before. If it got one wrong, tick it to include it anyway.",
+      });
+    }
+
     const list = contentEl.createEl("ul");
     list.addClass("penseed-item-list");
     list.addClass("penseed-grow");
@@ -768,7 +855,7 @@ export class ClassificationModal extends Modal {
       this.renderGroup(list, "Review these notes", review, true, false, true);
     }
     if (excluded.length > 0) {
-      this.renderGroup(list, "Excluded", excluded, false, true);
+      this.renderGroup(list, "Excluded", excluded, true, true);
     }
 
     const rememberRow = contentEl.createDiv({ cls: "penseed-confirm-actions" });
@@ -800,7 +887,7 @@ export class ClassificationModal extends Modal {
     for (const f of files) {
       const li = list.createEl("li");
       li.addClass("penseed-item-row");
-      if (muted) li.addClass("penseed-unchanged-notice");
+      if (muted) li.addClass("penseed-excluded-row");
 
       const label = li.createEl("label");
       const box = label.createEl("input", { type: "checkbox" });
