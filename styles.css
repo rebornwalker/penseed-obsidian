@@ -670,6 +670,16 @@ body.penseed-resizing {
   overflow: hidden;
 }
 
+/* ---- Sync whole manuscript modal: larger initial size (~2.5x) ---- */
+
+.penseed-result-modal.penseed-manuscript-modal {
+  width: min(1400px, 92vw);
+}
+
+.penseed-result-modal.penseed-manuscript-modal .penseed-grow {
+  max-height: 30em;
+}
+
 .penseed-result-modal.penseed-user-resized {
   max-height: none;
 }

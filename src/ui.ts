@@ -683,9 +683,10 @@ function classificationReason(f: ClassifiedFile): string {
 
 /**
  * Phase 0.37 confirmation gate D: language-independent classification preview.
- * Chapters (auto) are locked in; "needs-confirm" notes are checkboxes preset to
- * the classifier's defaultInclude; excluded notes are grayed out. A "remember
- * excluded notes" checkbox persists the exclusion list (scheme C).
+ * Chapters (auto) are pre-selected and editable; "needs-confirm" notes are
+ * checkboxes preset to the classifier's defaultInclude; excluded notes are
+ * grayed out and non-editable. A "remember excluded notes" checkbox persists
+ * the note-exclusion list (scheme C) — chapters are never persisted as excluded.
  */
 export class ClassificationModal extends Modal {
   private classified: ClassifiedFile[];
@@ -709,11 +710,12 @@ export class ClassificationModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     this.modalEl.addClass("penseed-result-modal");
+    this.modalEl.addClass("penseed-manuscript-modal");
     contentEl.addClass("penseed-result");
 
     contentEl.createEl("h2", { text: "Sync whole manuscript" });
     const hint = contentEl.createDiv({
-      text: "Chapters are included automatically. Review the remaining notes before syncing.",
+      text: "Chapters are pre-selected — uncheck any to skip. Review the remaining notes before syncing.",
     });
     hint.addClass("penseed-unchanged-notice");
 
@@ -743,7 +745,7 @@ export class ClassificationModal extends Modal {
       this.renderGroup(list, "Chapters (auto)", chapters, true);
     }
     if (review.length > 0) {
-      this.renderGroup(list, "Review these notes", review, false);
+      this.renderGroup(list, "Review these notes", review, true, false, true);
     }
     if (excluded.length > 0) {
       this.renderGroup(list, "Excluded", excluded, false, true);
@@ -767,8 +769,9 @@ export class ClassificationModal extends Modal {
     list: HTMLElement,
     title: string,
     files: ClassifiedFile[],
-    locked: boolean,
-    muted = false
+    editable: boolean,
+    muted = false,
+    showReason = false
   ): void {
     const header = list.createEl("li");
     header.addClass("penseed-item-row");
@@ -782,19 +785,12 @@ export class ClassificationModal extends Modal {
       const label = li.createEl("label");
       const box = label.createEl("input", { type: "checkbox" });
       this.checks.set(f.path, box);
-      if (locked) {
-        box.checked = true;
-        box.disabled = true;
-      } else if (muted) {
-        box.checked = false;
-        box.disabled = true;
-      } else {
-        box.checked = f.defaultInclude;
-      }
+      box.checked = f.defaultInclude;
+      box.disabled = !editable;
 
       const text = label.createSpan();
       text.setText(f.basename);
-      if (!locked && !muted) {
+      if (showReason) {
         const reason = label.createSpan({ cls: "penseed-batch-tag" });
         reason.setText(` (${classificationReason(f)})`);
       }
@@ -805,18 +801,18 @@ export class ClassificationModal extends Modal {
     if (this.settled) return;
     this.settled = true;
     const includedPaths = new Set<string>();
-    const excludedThisRound: string[] = [];
+    // 「记住排除」只针对 reference note（needs-confirm / excluded），
+    // 用户临时取消勾选的章节只跳过本次同步，不永久排除。
+    const excludedNotes: string[] = [];
     for (const f of this.classified) {
       const box = this.checks.get(f.path);
       if (box?.checked) {
         includedPaths.add(f.path);
-      } else {
-        excludedThisRound.push(f.path);
+      } else if (f.verdict !== "chapter") {
+        excludedNotes.push(f.path);
       }
     }
-    const persistExcludes = this.rememberBox?.checked
-      ? excludedThisRound
-      : [];
+    const persistExcludes = this.rememberBox?.checked ? excludedNotes : [];
     this.resolve({ includedPaths, persistExcludes });
     this.close();
   }
