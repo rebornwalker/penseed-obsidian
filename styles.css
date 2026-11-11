@@ -680,6 +680,39 @@ body.penseed-resizing {
   max-height: 30em;
 }
 
+/* ---- Sync whole manuscript: intro copy ---- */
+
+.penseed-result .penseed-manuscript-intro {
+  margin-bottom: 0.75em;
+  line-height: 1.5;
+}
+
+.penseed-result .penseed-manuscript-intro ul {
+  margin: 0.4em 0 0 1.2em;
+  padding: 0;
+  list-style: disc;
+}
+
+.penseed-result .penseed-manuscript-intro li {
+  margin: 0.15em 0;
+}
+
+/* ---- Sync whole manuscript: excluded-note explainer + row style ---- */
+
+.penseed-result .penseed-manuscript-excluded {
+  margin-bottom: 0.75em;
+  padding: 0.6em 0.8em;
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--text-faint);
+  background: var(--background-secondary);
+  line-height: 1.5;
+}
+
+.penseed-result .penseed-excluded-row {
+  background: var(--background-modifier-hover);
+  border-radius: 4px;
+}
+
 .penseed-result-modal.penseed-user-resized {
   max-height: none;
 }
