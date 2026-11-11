@@ -2,12 +2,11 @@
  * chapterClassifier.ts — language-independent "chapter vs reference note"
  * classifier (Phase 0.37, scheme C+D).
  *
- * Three structural signals, ZERO keyword/word-list lookup, so it works for any
+ * Two structural signals, ZERO keyword/word-list lookup, so it works for any
  * language the user writes in (English, Chinese, French, German, Japanese, ...):
- *   1. numbering majority — normalize digit runs to '#' and count patterns;
- *   2. folder density — first-level subfolders with few .md files are likely
+ *   1. folder density — first-level subfolders with few .md files are likely
  *      reference material (character sheets, world bible), suggested for exclusion;
- *   3. front/back position anchoring — unnumbered files sorted by basename and
+ *   2. front/back position anchoring — unnumbered files sorted by basename and
  *      placed before/after numbered files.
  *
  * Anything still ambiguous falls through to the preview-confirm dialog (D).
@@ -27,26 +26,9 @@ export interface ClassifiedFile extends ClassifierInput {
   defaultInclude: boolean; // used for the preview checkbox default when needs-confirm
 }
 
-// 信号 1（编号多数派）：连续数字归一化成 '#'，纯数字、零词表、语言无关
+// 连续数字归一化成 '#'，生成用于展示的 pattern（纯数字、零词表、语言无关）
 export function normalizePattern(basename: string): string {
   return basename.replace(/\d+/g, "#");
-}
-
-export function detectDominantNumberedPattern(basenames: string[]): string | null {
-  const counts = new Map<string, number>();
-  for (const b of basenames) {
-    const p = normalizePattern(b);
-    if (p.includes("#")) counts.set(p, (counts.get(p) ?? 0) + 1);
-  }
-  let best: string | null = null;
-  let bestCount = 0;
-  for (const [p, c] of counts) {
-    if (c > bestCount) {
-      best = p;
-      bestCount = c;
-    }
-  }
-  return best;
 }
 
 // 信号 2（文件夹密度）：项目文件夹下，含 .md 文件数 <= threshold 的一级子文件夹 → 建议排除。
@@ -101,7 +83,6 @@ export function classifyManuscriptFiles(
   excludePaths: string[],
   projectFolder: string
 ): ClassifiedFile[] {
-  const dominant = detectDominantNumberedPattern(files.map((f) => f.basename));
   const pos = frontBackPosition(files);
   const excluded = new Set(excludePaths.map((p) => p.replace(/\/+$/, "")));
 
@@ -112,7 +93,7 @@ export function classifyManuscriptFiles(
     );
     const p = pos.get(f.path) ?? null;
     if (isExcluded) return { ...f, pattern, verdict: "excluded", defaultInclude: false };
-    if (f.number !== null && pattern === dominant) {
+    if (f.number !== null) {
       return { ...f, pattern, verdict: "chapter", defaultInclude: true };
     }
     // 仅前置无编号（序/楔子，对应负编号位置锚定）默认纳入；后置无编号默认不纳入——
