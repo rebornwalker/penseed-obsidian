@@ -1150,6 +1150,15 @@ export default class PenseedPlugin extends Plugin {
       console.error("[Penseed] Failed to list chapters for batch reanalysis", e);
     }
 
+    // Resolve the project title so the progress modal can name the project.
+    let projectTitle: string | null = null;
+    try {
+      const projects = await listProjects(apiUrl, token);
+      projectTitle = projects.find((p) => p.id === projectId)?.title ?? null;
+    } catch (e) {
+      console.error("[Penseed] Failed to resolve project title for batch reanalysis", e);
+    }
+
     const noteByNumber = new Map<number, TFile>();
     for (const f of this.app.vault.getMarkdownFiles()) {
       const n = extractChapterNumber(f.basename);
@@ -1206,6 +1215,7 @@ export default class PenseedPlugin extends Plugin {
     this.batchTask = {
       taskId: started.task_id,
       projectId,
+      projectTitle,
       total: started.total ?? payload.length,
       completed: 0,
       failed: 0,
@@ -1421,8 +1431,13 @@ export default class PenseedPlugin extends Plugin {
       );
     } else if (task.status === "completed") {
       setIcon(icon, "check-circle");
+      const total = task.total || 0;
+      const completed = task.completed || 0;
+      // 级联跨波次时 completed 累计值会超过用户提交章数，回退到 total。
+      const didCascade = (task.totalWaves ?? 1) > 1;
+      const analyzedCount = didCascade ? total : completed;
       this.batchStatusItem.createSpan({
-        text: `Re-analysis done: ${task.completed} chapters`,
+        text: `Re-analysis done: ${analyzedCount} chapters`,
       });
       this.batchStatusItem.setAttribute(
         "title",
@@ -1716,6 +1731,7 @@ export default class PenseedPlugin extends Plugin {
       this.batchTask = {
         taskId: started.task_id,
         projectId,
+        projectTitle: chosen.title,
         total: started.total ?? 0,
         completed: 0,
         failed: 0,

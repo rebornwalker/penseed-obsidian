@@ -12,6 +12,7 @@ export interface ReplayItem {
 export interface ReanalysisBatchTaskState {
   taskId: string;
   projectId: number;
+  projectTitle: string | null;
   total: number;
   completed: number;
   failed: number;
@@ -418,14 +419,27 @@ export class BatchProgressModal extends Modal {
       return;
     }
 
+    if (state.projectTitle) {
+      contentEl.createDiv({
+        cls: "penseed-batch-project",
+        text: `Project: ${state.projectTitle}`,
+      });
+    }
+
     const body = contentEl.createDiv({ cls: "penseed-batch-body" });
 
     if (state.status === "running") {
       const total = state.total || 0;
       const completed = state.completed || 0;
+      // 级联（第 2+ 波）时 completed 会累计跨波次超过 total，此时只显示波次，
+      // 避免出现「18/16」这类令用户困惑的分数（用户只贴入了 total 章）。
+      const runningText =
+        state.currentWave != null && state.currentWave > 1
+          ? `Re-analyzing wave ${state.currentWave}…`
+          : `Re-analyzing ${completed}/${total}`;
       body.createDiv({
         cls: "penseed-batch-status",
-        text: `Re-analyzing ${completed}/${total}`,
+        text: runningText,
       });
 
       const meta = body.createDiv({ cls: "penseed-batch-meta" });
@@ -439,9 +453,15 @@ export class BatchProgressModal extends Modal {
         meta.createDiv({ cls: "penseed-batch-tag", text: `${state.failed} failed` });
       }
     } else if (state.status === "completed") {
+      const total = state.total || 0;
+      const completed = state.completed || 0;
+      // 级联跨波次时 completed 累计值（如 19）会超过用户实际提交的章数（如 16），
+      // 这里回退到 total，避免「19 chapters」这类困惑；单波次仍用 completed 以保留失败统计。
+      const didCascade = (state.totalWaves ?? 1) > 1;
+      const analyzedCount = didCascade ? total : completed;
       body.createDiv({
         cls: "penseed-batch-status",
-        text: `${state.completed} chapter${plural(state.completed)} re-analyzed`,
+        text: `${analyzedCount} chapter${plural(analyzedCount)} analyzed`,
       });
 
       const meta = body.createDiv({ cls: "penseed-batch-meta" });

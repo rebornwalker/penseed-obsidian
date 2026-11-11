@@ -705,6 +705,12 @@ body.penseed-resizing {
 
 /* ---- Batch re-analysis progress modal layout ---- */
 
+.penseed-result .penseed-batch-project {
+  font-weight: 600;
+  margin-bottom: 0.5em;
+  color: var(--text-normal);
+}
+
 .penseed-result-modal .penseed-batch-body {
   display: flex;
   flex-direction: column;
