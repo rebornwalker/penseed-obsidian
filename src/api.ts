@@ -365,6 +365,10 @@ export interface ReanalysisBatchStatus {
     new_stale_chapter_ids: number[];
     wave_seq: number | null;
     max_waves_reached: boolean;
+    total_waves?: number;
+    stopped_by_limit?: boolean;
+    remaining_stale_count?: number;
+    credits_used?: number;
   } | null;
   [key: string]: unknown;
 }
@@ -705,6 +709,16 @@ export interface BatchSyncPreview {
   drift_note: string;
 }
 
+export interface BatchSyncResult {
+  converged: boolean;
+  total_waves: number;
+  stopped_by_limit: boolean;
+  stopped_reason: "converged" | "limit" | "no_content" | "cancelled";
+  remaining_stale_count: number;
+  credits_used: number;
+  new_stale_chapter_ids: number[];
+}
+
 export interface BatchTaskStatus {
   task_id: string;
   status: "analyzing" | "paused" | "completed" | "error" | "cancelled";
@@ -712,7 +726,10 @@ export interface BatchTaskStatus {
   completed: number;
   failed: number;
   current_chapter: number | null;
+  current_wave?: number | null;
+  credits_used?: number | null;
   error: string | null;
+  result?: BatchSyncResult | null;
 }
 
 export async function uploadBatchSyncChunk(

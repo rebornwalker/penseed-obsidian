@@ -21,6 +21,12 @@ export interface ReanalysisBatchTaskState {
   converged: boolean | null;
   newStaleChapterIds: number[];
   skippedNoNote: number;
+  // Phase 0.55: 级联富结果（仅整本同步路径提供）。
+  currentWave: number | null;
+  totalWaves: number | null;
+  stoppedByLimit: boolean | null;
+  stoppedReason: "converged" | "limit" | "no_content" | "cancelled" | null;
+  remainingStaleCount: number | null;
 }
 
 export interface ForeshadowingSummaryItem {
@@ -449,12 +455,35 @@ export class BatchProgressModal extends Modal {
         meta.createDiv({ cls: "penseed-batch-tag", text: `${state.failed} failed` });
       }
 
-      if (state.converged === false && state.newStaleChapterIds.length > 0) {
+      if (state.stoppedReason === "limit") {
+        body.createDiv({
+          cls: "penseed-batch-detail",
+          text: `Stopped at the safety limit after ${
+            state.totalWaves ?? 1
+          } wave${plural(state.totalWaves ?? 1)} — ${
+            state.remainingStaleCount ?? 0
+          } chapters still need review.`,
+        });
+      } else if (state.stoppedReason === "no_content") {
+        body.createDiv({
+          cls: "penseed-batch-detail",
+          text: `Sync done, but ${
+            state.remainingStaleCount ?? 0
+          } chapters are still outdated — re-paste their text to finish.`,
+        });
+      } else if (state.stoppedReason === "converged") {
+        body.createDiv({
+          cls: "penseed-batch-detail",
+          text: `Converged after ${state.totalWaves ?? 1} wave${plural(
+            state.totalWaves ?? 1
+          )} — all chapters are up to date.`,
+        });
+      } else if (state.converged === false && state.newStaleChapterIds.length > 0) {
         body.createDiv({
           cls: "penseed-batch-detail",
           text: `${state.newStaleChapterIds.length} more chapter${plural(
             state.newStaleChapterIds.length
-          )} now out of date — open Penseed to continue.`,
+          )} are now out of date.`,
         });
       }
     } else if (state.status === "error") {

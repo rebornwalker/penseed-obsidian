@@ -1215,6 +1215,11 @@ export default class PenseedPlugin extends Plugin {
       converged: null,
       newStaleChapterIds: [],
       skippedNoNote,
+      currentWave: null,
+      totalWaves: null,
+      stoppedByLimit: null,
+      stoppedReason: null,
+      remainingStaleCount: null,
     };
 
     this.renderStatus();
@@ -1235,10 +1240,17 @@ export default class PenseedPlugin extends Plugin {
       completed: number;
       failed: number;
       current_chapter: number | null;
+      current_wave?: number | null;
+      credits_used?: number | null;
       error: string | null;
       result?: {
         converged: boolean;
         new_stale_chapter_ids: number[];
+        total_waves?: number;
+        stopped_by_limit?: boolean;
+        stopped_reason?: "converged" | "limit" | "no_content" | "cancelled";
+        remaining_stale_count?: number;
+        credits_used?: number;
       } | null;
     }> = getReanalysisBatchStatus
   ): Promise<void> {
@@ -1265,6 +1277,7 @@ export default class PenseedPlugin extends Plugin {
         task.completed = status.completed ?? 0;
         task.failed = status.failed ?? 0;
         task.currentChapterNumber = status.current_chapter ?? null;
+        task.currentWave = status.current_wave ?? null;
 
         if (status.status === "completed") {
           const result = status.result ?? {
@@ -1276,6 +1289,10 @@ export default class PenseedPlugin extends Plugin {
           task.status = "completed";
           task.converged = result.converged ?? true;
           task.newStaleChapterIds = result.new_stale_chapter_ids ?? [];
+          task.totalWaves = status.result?.total_waves ?? null;
+          task.stoppedByLimit = status.result?.stopped_by_limit ?? null;
+          task.stoppedReason = status.result?.stopped_reason ?? null;
+          task.remainingStaleCount = status.result?.remaining_stale_count ?? null;
           break;
         }
         if (status.status === "error") {
@@ -1393,9 +1410,11 @@ export default class PenseedPlugin extends Plugin {
       setIcon(icon, "loader");
       const total = task.total || 0;
       const completed = task.completed || 0;
-      this.batchStatusItem.createSpan({
-        text: `Re-analyzing ${completed}/${total}`,
-      });
+      const text =
+        task.currentWave != null && task.currentWave > 1
+          ? `Re-analyzing wave ${task.currentWave}…`
+          : `Re-analyzing ${completed}/${total}`;
+      this.batchStatusItem.createSpan({ text });
       this.batchStatusItem.setAttribute(
         "title",
         "Batch re-analysis in progress — click for details"
@@ -1424,6 +1443,28 @@ export default class PenseedPlugin extends Plugin {
 
   private notifyBatchFinished(task: ReanalysisBatchTaskState): void {
     if (task.status === "completed") {
+      const waves = `${task.totalWaves ?? 1} wave${(task.totalWaves ?? 1) === 1 ? "" : "s"}`;
+      if (task.stoppedReason === "limit") {
+        notify(
+          `Sync stopped at the safety limit after ${waves} — ${
+            task.remainingStaleCount ?? 0
+          } chapters still need review. (Edit them, or raise max_waves.)`
+        );
+        return;
+      }
+      if (task.stoppedReason === "no_content") {
+        notify(
+          `Sync done, but ${
+            task.remainingStaleCount ?? 0
+          } chapters are still outdated — re-paste their text to finish.`
+        );
+        return;
+      }
+      if (task.stoppedReason === "converged") {
+        notify(`Sync complete — converged after ${waves}. All chapters are up to date.`);
+        return;
+      }
+      // 手动「Batch re-analyze outdated chapters」路径（无级联富结果）。
       const parts: string[] = [`Re-analysis done: ${task.completed} chapters`];
       if (task.skippedNoNote > 0) {
         parts.push(`${task.skippedNoNote} skipped (no local note)`);
@@ -1684,6 +1725,11 @@ export default class PenseedPlugin extends Plugin {
         converged: null,
         newStaleChapterIds: [],
         skippedNoNote: 0,
+        currentWave: null,
+        totalWaves: null,
+        stoppedByLimit: null,
+        stoppedReason: null,
+        remainingStaleCount: null,
       };
       this.renderStatus();
       notify(
