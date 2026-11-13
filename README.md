@@ -80,6 +80,11 @@ Run **Penseed: Analyze Current Note** from the command palette. Penseed will bin
 the note to a project, analyze it, and show how many new threads and characters
 it found.
 
+To analyze a whole book you've already written — or to batch-analyze after a
+revision — click the **book-open icon** in the left ribbon, or run **Penseed:
+Analyze whole manuscript with Penseed**. See "Bringing in a whole book at once"
+below for the full walkthrough.
+
 Click the **layout-grid icon** in the left ribbon — or run **Penseed: Open
 Foreshadowing Board** — to open a four-column board (Pending / In Progress /
 Resolved / Cancelled). Drag a clue between columns to update its status, kept in
@@ -116,14 +121,35 @@ it — the butterfly effect.
 ### Bringing in a whole book at once
 
 If you're adding a novel you've already written — dozens or hundreds of chapters
-— you don't have to work through it one note at a time. Use the **batch-analyze**
-feature and Penseed will go through every chapter automatically, **from the first
-to the last, in the right order**. You don't have to keep track of where you are,
-or worry about skipping a chapter — the tool handles the order for you.
+— you don't have to work through it one note at a time. Use **Analyze whole
+manuscript** and Penseed reads every note in your project's folder, sorts the
+chapters into order, and analyzes them **from the first to the last**. You don't
+have to keep track of where you are, and you can't accidentally skip a chapter —
+the plugin pulls the complete book straight from your vault.
 
-Already brought the book in and revising later? Open the web app and use **Sync
-Changes** — paste your whole manuscript again and Penseed re-analyzes only the
-chapters that actually changed, skipping the rest at zero cost.
+**How it works**
+
+1. Click the **book-open icon** in the left ribbon, or run **Penseed: Analyze
+   whole manuscript with Penseed** from the command palette.
+2. Penseed scans your project folder and sorts every note into three groups:
+   - **Chapters (auto)** — detected chapter notes, pre-selected and analyzed in
+     order.
+   - **Review these notes** — notes Penseed isn't sure are chapters; tick the
+     real ones.
+   - **Excluded** — planning material (character sheets, world bibles, outlines)
+     kept out so spoilers don't leak into your analysis.
+   Tick or untick any note before you start.
+3. The next screen shows a preview — how many chapters are **new**, **unchanged**,
+   and **changed**, plus the **estimated credit cost** — before anything runs.
+
+**Revising later**
+
+Already brought the book in and revising? Run **Analyze whole manuscript** again.
+Because the plugin reads straight from your vault, it always has the complete
+book, so it can compare every chapter and re-analyze **only the ones that
+changed** — unchanged chapters are skipped at zero cost. No copy-paste, no
+hunting for which chapter you edited, and no risk of leaving a chapter out, which
+would break the chain of analysis downstream.
 
 ### When you edit an earlier chapter
 
