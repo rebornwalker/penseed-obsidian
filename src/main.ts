@@ -263,6 +263,14 @@ export default class PenseedPlugin extends Plugin {
   private static readonly MAX_CONTENT_CACHE = 2000;
   private contentCache: Map<string, string> = new Map();
 
+  // Phase 0.59: chapter_number → notePath + uploaded content, filled during
+  // buildManuscriptChapters so the sync-completion handler can refresh the cache
+  // for exactly the chapters the backend reported as fully re-analyzed.
+  private syncUploadMap = new Map<number, { notePath: string; content: string }>();
+  // Phase 0.59: notes submitted by manual batch reanalysis (all stale → all
+  // full reanalysis), refreshed on completion.
+  private batchSubmittedNotes: { notePath: string; content: string }[] = [];
+
   async onload(): Promise<void> {
     await this.loadSettings();
     await this.loadContentCache();
@@ -1050,9 +1058,13 @@ export default class PenseedPlugin extends Plugin {
       return;
     }
 
-    // Phase 0.22: the server just committed this chapter's content (hash + gate),
-    // so cache it as the "last-analyzed" text for the next edit→re-analyze cycle.
-    this.rememberContent(task.notePath, task.content);
+    // Phase 0.59 (D8): only refresh the cache when the chapter was FULLY
+    // re-analyzed. On a noop the server did NOT re-extract facts, so caching the
+    // new text would advance the diff baseline past the facts and compound
+    // future gate false negatives.
+    if (result.noop !== true) {
+      this.rememberContent(task.notePath, task.content);
+    }
 
     const apiUrl = this.settings.apiUrl;
     const token = await this.auth.getAccessToken();
@@ -1182,6 +1194,7 @@ export default class PenseedPlugin extends Plugin {
       .sort((a, b) => (a.chapterNumber ?? 0) - (b.chapterNumber ?? 0));
 
     const payload: ReanalysisBatchChapter[] = [];
+    this.batchSubmittedNotes = [];
     let skippedNoNote = 0;
     for (const { id, chapterNumber } of ordered) {
       const note =
@@ -1197,6 +1210,9 @@ export default class PenseedPlugin extends Plugin {
           content,
           previous_content: this.getRememberedContent(note.path),
         });
+        // Phase 0.59: submitted chapters are all stale → all full reanalysis,
+        // refresh their cache on completion.
+        this.batchSubmittedNotes.push({ notePath: note.path, content });
       } catch (e) {
         console.error("[Penseed] Failed to read note for chapter", id, e);
         skippedNoNote++;
@@ -1267,6 +1283,7 @@ export default class PenseedPlugin extends Plugin {
         stopped_reason?: "converged" | "limit" | "no_content" | "cancelled";
         remaining_stale_count?: number;
         credits_used?: number;
+        full_reanalyzed_chapter_numbers?: number[];
       } | null;
     }> = getReanalysisBatchStatus
   ): Promise<void> {
@@ -1309,6 +1326,19 @@ export default class PenseedPlugin extends Plugin {
           task.stoppedByLimit = status.result?.stopped_by_limit ?? null;
           task.stoppedReason = status.result?.stopped_reason ?? null;
           task.remainingStaleCount = status.result?.remaining_stale_count ?? null;
+          // Phase 0.59: 仅全量重分析章刷新缓存（noop 章不上锁/不刷缓存）；批量手动重分析章全刷。
+          const fullNumbers = status.result?.full_reanalyzed_chapter_numbers ?? [];
+          if (fullNumbers.length > 0) {
+            for (const n of fullNumbers) {
+              const m = this.syncUploadMap.get(n);
+              if (m) this.rememberContent(m.notePath, m.content);
+            }
+          }
+          this.syncUploadMap.clear();
+          for (const s of this.batchSubmittedNotes) {
+            this.rememberContent(s.notePath, s.content);
+          }
+          this.batchSubmittedNotes = [];
           break;
         }
         if (status.status === "error") {
@@ -1690,13 +1720,26 @@ export default class PenseedPlugin extends Plugin {
       kept.map((c) => ({ basename: c.basename, number: c.number }))
     );
     const chapters: BatchSyncChapterInput[] = [];
+    this.syncUploadMap.clear();
     for (let i = 0; i < keptFiles.length; i++) {
       const content = await this.app.vault.read(keptFiles[i]);
-      chapters.push({
-        chapter_number: assigned[i].number,
+      const notePath = keptFiles[i].path;
+      const chapterNumber = assigned[i].number;
+      const chapter: BatchSyncChapterInput = {
+        chapter_number: chapterNumber,
         title: keptFiles[i].basename,
         content,
-      });
+      };
+      // Phase 0.59: only attach previous_content for changed chapters (D6);
+      // unchanged chapters short-circuit server-side and never read it.
+      const remembered = this.getRememberedContent(notePath);
+      if (remembered && remembered.trim() !== content.trim()) {
+        chapter.previous_content = remembered;
+      }
+      chapters.push(chapter);
+      if (typeof chapterNumber === "number") {
+        this.syncUploadMap.set(chapterNumber, { notePath, content });
+      }
     }
     const chunks: BatchSyncChapterInput[][] = [];
     for (let i = 0; i < chapters.length; i += 100) {

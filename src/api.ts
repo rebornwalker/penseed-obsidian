@@ -697,6 +697,9 @@ export interface BatchSyncChapterInput {
   chapter_number: number | null;
   title?: string | null;
   content: string;
+  // Phase 0.59: last fully-analyzed content for the sentence/importance gate
+  // (retention OFF). Only attached for changed chapters (D6).
+  previous_content?: string;
 }
 
 export interface BatchSyncPreview {
@@ -717,6 +720,9 @@ export interface BatchSyncResult {
   remaining_stale_count: number;
   credits_used: number;
   new_stale_chapter_ids: number[];
+  // Phase 0.59: chapter numbers that were FULLY re-analyzed (not noop/skip),
+  // so the plugin only refreshes the cache for these (D1).
+  full_reanalyzed_chapter_numbers: number[];
 }
 
 export interface PendingFanout {
