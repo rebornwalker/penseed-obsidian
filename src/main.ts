@@ -1284,6 +1284,7 @@ export default class PenseedPlugin extends Plugin {
         remaining_stale_count?: number;
         credits_used?: number;
         full_reanalyzed_chapter_numbers?: number[];
+        unchanged_chapter_numbers?: number[];
       } | null;
     }> = getReanalysisBatchStatus
   ): Promise<void> {
@@ -1326,13 +1327,15 @@ export default class PenseedPlugin extends Plugin {
           task.stoppedByLimit = status.result?.stopped_by_limit ?? null;
           task.stoppedReason = status.result?.stopped_reason ?? null;
           task.remainingStaleCount = status.result?.remaining_stale_count ?? null;
-          // Phase 0.59: 仅全量重分析章刷新缓存（noop 章不上锁/不刷缓存）；批量手动重分析章全刷。
-          const fullNumbers = status.result?.full_reanalyzed_chapter_numbers ?? [];
-          if (fullNumbers.length > 0) {
-            for (const n of fullNumbers) {
-              const m = this.syncUploadMap.get(n);
-              if (m) this.rememberContent(m.notePath, m.content);
-            }
+          // Phase 0.59: 全量重分析章 + 未改章都刷新缓存（noop 章不上锁/不刷缓存）；
+          // 未改章当前内容 == 上次全量分析内容，缓存可安全兜底冷缓存（retention OFF）。
+          const cacheableNumbers = new Set<number>([
+            ...(status.result?.full_reanalyzed_chapter_numbers ?? []),
+            ...(status.result?.unchanged_chapter_numbers ?? []),
+          ]);
+          for (const n of cacheableNumbers) {
+            const m = this.syncUploadMap.get(n);
+            if (m) this.rememberContent(m.notePath, m.content);
           }
           this.syncUploadMap.clear();
           for (const s of this.batchSubmittedNotes) {

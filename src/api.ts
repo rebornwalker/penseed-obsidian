@@ -723,6 +723,10 @@ export interface BatchSyncResult {
   // Phase 0.59: chapter numbers that were FULLY re-analyzed (not noop/skip),
   // so the plugin only refreshes the cache for these (D1).
   full_reanalyzed_chapter_numbers: number[];
+  // Phase 0.59: chapter numbers skipped as "unchanged" (hash match) — their
+  // current content already equals the last fully-analyzed content, so the
+  // plugin caches them too to bootstrap a cold cache (retention OFF).
+  unchanged_chapter_numbers: number[];
 }
 
 export interface PendingFanout {
