@@ -496,7 +496,7 @@ export class BatchProgressModal extends Modal {
       } else if (state.stoppedReason === "no_content") {
         body.createDiv({
           cls: "penseed-batch-detail",
-          text: `Sync done, but ${
+          text: `Analysis done, but ${
             state.remainingStaleCount ?? 0
           } chapters are still outdated — re-paste their text to finish.`,
         });
@@ -779,12 +779,12 @@ export class ClassificationModal extends Modal {
     this.modalEl.addClass("penseed-manuscript-modal");
     contentEl.addClass("penseed-result");
 
-    contentEl.createEl("h2", { text: "Sync whole manuscript" });
+    contentEl.createEl("h2", { text: "Analyze your whole manuscript" });
 
     // 功能介绍：是什么 / 好处 / 威力 / 省 token / 哪些章会被分析。
     const intro = contentEl.createDiv({ cls: "penseed-manuscript-intro" });
     intro.createDiv({
-      text: "Sync your whole manuscript in one pass. Penseed reads the notes in this project's folder and, for every chapter, extracts:",
+      text: "Analyze your whole manuscript in one pass. Penseed reads the notes in this project's folder and, for every chapter, extracts:",
     });
     const bullets = intro.createEl("ul");
     bullets.createEl("li", {
@@ -861,10 +861,10 @@ export class ClassificationModal extends Modal {
     const rememberRow = contentEl.createDiv({ cls: "penseed-confirm-actions" });
     const rememberLabel = rememberRow.createEl("label");
     this.rememberBox = rememberLabel.createEl("input", { type: "checkbox" });
-    rememberLabel.appendText(" Remember excluded notes for future syncs");
+    rememberLabel.appendText(" Remember excluded notes for future analyses");
 
     const actions = contentEl.createDiv({ cls: "penseed-confirm-actions" });
-    const syncBtn = actions.createEl("button", { text: "Sync", cls: "mod-cta" });
+    const syncBtn = actions.createEl("button", { text: "Analyze", cls: "mod-cta" });
     syncBtn.addEventListener("click", () => this.settle());
     const cancelBtn = actions.createEl("button", { text: "Cancel" });
     cancelBtn.addEventListener("click", () => this.settleCancel());
@@ -966,7 +966,7 @@ export class SyncPreviewModal extends Modal {
     contentEl.empty();
     contentEl.addClass("penseed-confirm");
 
-    contentEl.createEl("h2", { text: "Start sync?" });
+    contentEl.createEl("h2", { text: "Start analysis?" });
 
     const p = this.preview;
     const summary = contentEl.createDiv({ cls: "penseed-batch-meta" });
@@ -1002,7 +1002,7 @@ export class SyncPreviewModal extends Modal {
 
     const actions = contentEl.createDiv({ cls: "penseed-confirm-actions" });
     const startBtn = actions.createEl("button", {
-      text: "Start sync",
+      text: "Start analysis",
       cls: "mod-cta",
     });
     startBtn.addEventListener("click", () => this.settle(true));

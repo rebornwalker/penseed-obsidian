@@ -291,7 +291,7 @@ export default class PenseedPlugin extends Plugin {
       void this.activateBoardView();
     });
 
-    this.addRibbonIcon("book-open", "Sync whole manuscript with Penseed", () => {
+    this.addRibbonIcon("book-open", "Analyze your whole manuscript with Penseed", () => {
       void this.syncManuscript();
     });
 
@@ -315,7 +315,7 @@ export default class PenseedPlugin extends Plugin {
 
     this.addCommand({
       id: "penseed-sync-manuscript",
-      name: "Sync whole manuscript with Penseed",
+      name: "Analyze whole manuscript with Penseed",
       callback: () => this.syncManuscript(),
     });
 
@@ -1532,7 +1532,7 @@ export default class PenseedPlugin extends Plugin {
       const waves = `${task.totalWaves ?? 1} wave${(task.totalWaves ?? 1) === 1 ? "" : "s"}`;
       if (task.stoppedReason === "limit") {
         notify(
-          `Sync stopped at the safety limit after ${waves} — ${
+          `Analysis stopped at the safety limit after ${waves} — ${
             task.remainingStaleCount ?? 0
           } chapters still need review. (Edit them, or raise max_waves.)`
         );
@@ -1540,14 +1540,14 @@ export default class PenseedPlugin extends Plugin {
       }
       if (task.stoppedReason === "no_content") {
         notify(
-          `Sync done, but ${
+          `Analysis done, but ${
             task.remainingStaleCount ?? 0
           } chapters are still outdated — re-paste their text to finish.`
         );
         return;
       }
       if (task.stoppedReason === "converged") {
-        notify(`Sync complete — converged after ${waves}. All chapters are up to date.`);
+        notify(`Analysis complete — converged after ${waves}. All chapters are up to date.`);
         return;
       }
       // 手动「Batch re-analyze outdated chapters」路径（无级联富结果）。
@@ -1882,7 +1882,7 @@ export default class PenseedPlugin extends Plugin {
       };
       this.renderStatus();
       notify(
-        "Manuscript sync started. It runs in the background — check the status bar for progress."
+        "Manuscript analysis started. It runs in the background — check the status bar for progress."
       );
       void this.pollBatchTaskInBackground(getBatchAnalysisStatus);
     } catch (e) {
