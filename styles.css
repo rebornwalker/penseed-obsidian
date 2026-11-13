@@ -702,6 +702,33 @@ body.penseed-resizing {
   margin: 0.15em 0;
 }
 
+/* ---- Sync whole manuscript: collapsible intro ---- */
+
+.penseed-result .penseed-manuscript-tagline {
+  margin-bottom: 0.75em;
+  line-height: 1.5;
+}
+
+.penseed-result .penseed-manuscript-details {
+  margin-bottom: 0.75em;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+}
+
+.penseed-result .penseed-manuscript-details summary {
+  padding: 0.5em 0.8em;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-accent);
+  user-select: none;
+}
+
+.penseed-result .penseed-manuscript-details-body {
+  padding: 0.6em 0.8em 0.8em;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
 /* ---- Sync whole manuscript: excluded-note explainer + row style ---- */
 
 .penseed-result .penseed-manuscript-excluded {

@@ -781,10 +781,20 @@ export class ClassificationModal extends Modal {
 
     contentEl.createEl("h2", { text: "Analyze your whole manuscript" });
 
-    // 功能介绍：是什么 / 好处 / 威力 / 省 token / 哪些章会被分析。
-    const intro = contentEl.createDiv({ cls: "penseed-manuscript-intro" });
+    // 精炼定位：整本/批量 + 修改后重分析刷新结构化信息。始终可见。
+    const tagline = contentEl.createDiv({ cls: "penseed-manuscript-tagline" });
+    tagline.createDiv({
+      text: "Analyze every chapter in this folder in one pass — or tick just the notes you want. Run it again after you revise chapters and Penseed re-analyzes only what changed (unchanged are skipped), keeping your foreshadowings, elements, and resolutions up to date.",
+    });
+
+    // 详细说明折叠进 <details>，点击 "How it works" 展开，节约首屏空间。
+    const details = contentEl.createEl("details", { cls: "penseed-manuscript-details" });
+    details.createEl("summary", { text: "How it works" });
+    const detailBody = details.createEl("div", { cls: "penseed-manuscript-details-body" });
+
+    const intro = detailBody.createDiv({ cls: "penseed-manuscript-intro" });
     intro.createDiv({
-      text: "Analyze your whole manuscript in one pass. Penseed reads the notes in this project's folder and, for every chapter, extracts:",
+      text: "Penseed reads the notes in this project's folder and, for every chapter, extracts:",
     });
     const bullets = intro.createEl("ul");
     bullets.createEl("li", {
@@ -798,7 +808,7 @@ export class ClassificationModal extends Modal {
     });
 
     // 省 token：未改章节（hash 命中且非 stale）零 token 跳过，配额只按 new + changed 计。
-    const saving = contentEl.createDiv();
+    const saving = detailBody.createDiv();
     saving.addClass("penseed-unchanged-notice");
     saving.createDiv({
       text: "Pay only for what changed",
@@ -809,7 +819,7 @@ export class ClassificationModal extends Modal {
     });
 
     // 哪些章会被分析 / 不会被分析。
-    const hint = contentEl.createDiv({
+    const hint = detailBody.createDiv({
       text: `Chapters (auto) are pre-selected and will be analyzed — uncheck any to skip. Under "Review these notes", tick notes that are real chapters. "Excluded" notes are left out by default, but you can tick them to include them anyway.`,
     });
     hint.addClass("penseed-unchanged-notice");
