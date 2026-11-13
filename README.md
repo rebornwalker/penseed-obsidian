@@ -153,11 +153,13 @@ would break the chain of analysis downstream.
 
 ### When you edit an earlier chapter
 
-If you rewrite chapter 100 while you're already at chapter 200, Penseed will tell
-you which later chapters are now out of date. **Don't re-analyze just one or two
-of them** — that breaks the chain the same way. Use the single **"Batch
-re-analyze outdated chapters"** button instead. It re-analyzes every affected
-chapter, one by one, in the right order, so the chain stays intact.
+If you rewrite chapter 100 while you're already at chapter 200, Penseed tells you
+which later chapters are now out of date — a status-bar badge shows how many.
+
+Click the badge to see the list, then choose **Batch re-analyze outdated
+chapters**. Penseed pulls those chapters straight from your vault and re-analyzes
+them in order, so the chain stays intact — no copy-paste, no hunting for the
+right text.
 
 ## Privacy
 
