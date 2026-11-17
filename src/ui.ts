@@ -868,12 +868,12 @@ export class ClassificationModal extends Modal {
       this.renderGroup(list, "Excluded", excluded, true, true);
     }
 
-    const rememberRow = contentEl.createDiv({ cls: "penseed-confirm-actions" });
+    const rememberRow = contentEl.createDiv({ cls: "penseed-manuscript-remember" });
     const rememberLabel = rememberRow.createEl("label");
     this.rememberBox = rememberLabel.createEl("input", { type: "checkbox" });
     rememberLabel.appendText(" Remember excluded notes for future analyses");
 
-    const actions = contentEl.createDiv({ cls: "penseed-confirm-actions" });
+    const actions = contentEl.createDiv({ cls: "penseed-manuscript-actions" });
     const syncBtn = actions.createEl("button", { text: "Analyze", cls: "mod-cta" });
     syncBtn.addEventListener("click", () => this.settle());
     const cancelBtn = actions.createEl("button", { text: "Cancel" });

@@ -685,6 +685,19 @@ body.penseed-resizing {
   max-height: 30em;
 }
 
+.penseed-result .penseed-manuscript-remember {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+  margin: 0.75em 0;
+}
+
+.penseed-result .penseed-manuscript-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5em;
+}
+
 /* ---- Sync whole manuscript: intro copy ---- */
 
 .penseed-result .penseed-manuscript-intro {
