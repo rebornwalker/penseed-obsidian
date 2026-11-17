@@ -7,7 +7,8 @@ writing — Penseed's AI does the remembering for you. Every time you analyze a
 chapter, it automatically reads the text, extracts every planted thread,
 character detail, and world rule, and quietly warns you before a contradiction
 slips past. There are no lists to maintain by hand and nothing to update
-manually; the AI builds and refreshes your story notes as you go. It also tracks
+manually — the AI keeps the structured record it extracts (threads, characters,
+and rules) up to date on its own. It also tracks
 **what your reader knows** at every point in the story — separate from what each
 character knows — so you never give away a twist too early.
 
@@ -24,14 +25,14 @@ chapter 500 never means re-reading chapters 1 through 499.
 
 | | A typical writing plugin | Penseed |
 |---|---|---|
-| How it remembers | Re-reads your whole book on every request | Reads each chapter once, then keeps tidy, organized notes on it |
+| How it remembers | Re-reads your whole book on every request | Reads each chapter once, then keeps a tidy, organized record of what it found |
 | Finding a detail | Skims everything from the start | Recalls only the relevant chapters |
 | At 500+ chapters | Slow, costly, forgetful | Fast, affordable, precise |
 | Foreshadowing | Not tracked | Plant → track → payoff, fully managed — automatically |
 | Contradictions | You catch them by re-reading | Flagged automatically before your readers notice |
 | Reader knowledge | Not tracked | Tracked separately from character knowledge, so twists stay hidden |
 | Rewrites that ripple | Re-check every later chapter | Re-checks only the chapters your edit affects |
-| Who does the work | You maintain every list by hand | The AI does it as you write |
+| Who does the work | You maintain every list by hand | The AI extracts and tracks it as you write |
 
 ## Why Penseed stays fast
 
@@ -52,8 +53,8 @@ it never needs to keep your original text to do it.
 ## What Penseed tracks for you
 
 Everything below is tracked **automatically by Penseed's AI** — you don't
-maintain any of it by hand. You write the story; the AI reads it and builds
-these notes for you, updating them whenever a chapter changes.
+maintain any of it by hand. You write the story; the AI reads it and maintains
+these structured records for you, updating them whenever a chapter changes.
 
 - **Foreshadowing** — the one thing almost no other tool does. Penseed remembers
   every thread you plant, tells you which ones are still dangling, and which
@@ -175,8 +176,10 @@ right text.
 ## Privacy
 
 When you choose to analyze a note, the plugin sends that note's content to
-Penseed for analysis only. By default Penseed uses the text to build its notes
-about your story and **does not store the original text itself**.
+Penseed for analysis only. By default Penseed uses the text to build structured
+records about your story — threads, characters, and world rules — and **does not
+store the original text itself**, unless you turn on Save chapter text yourself
+(see below).
 
 You can optionally turn on **Save chapter text** in Penseed (off by default).
 When it's on, Penseed keeps an **encrypted** copy of each chapter's text so it
