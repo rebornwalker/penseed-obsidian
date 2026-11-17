@@ -88,28 +88,29 @@ chapter and see exactly what a reader knows at that point — so you can:
 
 ## How to use it
 
-Run **Penseed: Analyze Current Note** from the command palette. Penseed will bind
-the note to a project, analyze it, and show how many new threads and characters
-it found.
+1. **Analyze a chapter** — Run **Penseed: Analyze Current Note** from the command
+   palette. Penseed binds the note to a project, analyzes it, and shows how many
+   new threads and characters it found.
 
-To analyze a whole book you've already written — or to batch-analyze after a
-revision — click the **book-open icon** in the left ribbon, or run **Penseed:
-Analyze whole manuscript with Penseed**. See "Bringing in a whole book at once"
-below for the full walkthrough.
+2. **Analyze a whole manuscript** — Click the **book-open icon** in the left
+   ribbon, or run **Penseed: Analyze whole manuscript with Penseed**, to batch-
+   analyze a book you've already written, or re-analyze it after a revision. See
+   "Bringing in a whole book at once" below for the full walkthrough.
 
-Click the **layout-grid icon** in the left ribbon — or run **Penseed: Open
-Foreshadowing Board** — to open a four-column board (Pending / In Progress /
-Resolved / Cancelled). Drag a clue between columns to update its status, kept in
-sync with the web app. For the full board with relations and editing, open the
-web app.
+3. **Open the Foreshadowing Board** — Click the **layout-grid icon** in the left
+   ribbon, or run **Penseed: Open Foreshadowing Board**, to open a four-column
+   board (Pending / In Progress / Resolved / Cancelled). Drag a clue between
+   columns to update its status, kept in sync with the web app. For the full
+   board with relations and editing, open the web app.
 
-Double-click any card on the board to jump straight to the matching chapter
-note — Penseed opens it, scrolls to the exact sentence the card refers to, and
-highlights it for you, so you don't have to hunt through the chapter yourself.
+4. **Jump to a chapter from a card** — Double-click any card on the board to
+   open the matching chapter note. Penseed scrolls to the exact sentence the
+   card refers to and highlights it, so you don't have to hunt through the
+   chapter yourself.
 
-Click the external-link icon on any card to open that foreshadowing's full
-detail view in the Penseed web app — Penseed jumps straight to the right project
-and opens the detail drawer, no hunting required.
+5. **Open a foreshadowing in the web app** — Click the external-link icon on any
+   card to open that foreshadowing's full detail view. Penseed jumps straight to
+   the right project and opens the detail drawer, no hunting required.
 
 ## Analyze in order — from chapter one
 
