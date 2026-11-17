@@ -235,6 +235,7 @@ interface SingleReanalysisTaskState {
   taskId: string;
   projectId: number;
   chapterId: number;
+  chapterNumber: number | null;
   notePath: string;
   content: string;
   status: "running" | "completed" | "error" | "cancelled";
@@ -971,6 +972,7 @@ export default class PenseedPlugin extends Plugin {
       taskId: started.task_id,
       projectId,
       chapterId: chapter.id,
+      chapterNumber: chapter.chapter_number ?? null,
       notePath,
       content,
       status: "running",
@@ -1003,6 +1005,8 @@ export default class PenseedPlugin extends Plugin {
         const status = await withRetry(() =>
           getSingleReanalysisStatus(apiUrl, token, task.taskId)
         );
+
+        task.chapterNumber = status.current_chapter ?? task.chapterNumber;
 
         if (status.status === "completed") {
           task.status = "completed";
@@ -1437,7 +1441,13 @@ export default class PenseedPlugin extends Plugin {
 
     if (task.status === "running") {
       setIcon(icon, "loader");
-      this.batchStatusItem.createSpan({ text: "Re-analyzing…" });
+      const chapterNo = task.chapterNumber;
+      this.batchStatusItem.createSpan({
+        text:
+          chapterNo != null
+            ? `Re-analyzing Chapter ${chapterNo}…`
+            : "Re-analyzing…",
+      });
       this.batchStatusItem.setAttribute(
         "title",
         "Single-chapter re-analysis in progress"
@@ -1481,10 +1491,16 @@ export default class PenseedPlugin extends Plugin {
       setIcon(icon, "loader");
       const total = task.total || 0;
       const completed = task.completed || 0;
+      const chapterNo = task.currentChapterNumber;
+      const chapterLabel = chapterNo != null ? `Chapter ${chapterNo}` : null;
       const text =
         task.currentWave != null && task.currentWave > 1
-          ? `Re-analyzing wave ${task.currentWave}…`
-          : `Re-analyzing ${completed}/${total}`;
+          ? chapterLabel
+            ? `Re-analyzing ${chapterLabel} · wave ${task.currentWave}…`
+            : `Re-analyzing wave ${task.currentWave}…`
+          : chapterLabel
+            ? `Re-analyzing ${chapterLabel} (${completed}/${total})`
+            : `Re-analyzing ${completed}/${total}`;
       this.batchStatusItem.createSpan({ text });
       this.batchStatusItem.setAttribute(
         "title",
