@@ -257,6 +257,9 @@ export default class PenseedPlugin extends Plugin {
   private changeReminderStatusItem: HTMLElement | null = null;
   private lastActiveNotePath: string | null = null;
   private remindedNotePath: string | null = null;
+  // Phase 0.23: per-note debounce timers so an edit is detected while the note
+  // is still open (not just on leave).
+  private editCheckTimers: Map<string, number> = new Map();
 
   // Phase 0.22: last-analyzed content per note path, so the backend's
   // sentence-level semantic gate can compare the author's old vs new text.
@@ -391,9 +394,24 @@ export default class PenseedPlugin extends Plugin {
         if (prev && prev !== current) {
           void this.checkNoteForChanges(prev);
         }
-        if (current && current === this.remindedNotePath) {
-          this.clearChangeReminder();
-        }
+      })
+    );
+    // Detect edits while the note is still open (not just on leave): debounce
+    // `modify` so the reminder appears shortly after the author pauses typing,
+    // without re-reading the file on every keystroke.
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        if (!(file instanceof TFile) || file.extension !== "md") return;
+        const path = file.path;
+        const existing = this.editCheckTimers.get(path);
+        if (existing !== undefined) window.clearTimeout(existing);
+        this.editCheckTimers.set(
+          path,
+          window.setTimeout(() => {
+            this.editCheckTimers.delete(path);
+            void this.checkNoteForChanges(path);
+          }, 1500)
+        );
       })
     );
     // Also treat window blur (switching to another app) as a breakpoint.
@@ -416,6 +434,8 @@ export default class PenseedPlugin extends Plugin {
     this.changeReminderStatusItem = null;
     this.lastActiveNotePath = null;
     this.remindedNotePath = null;
+    for (const t of this.editCheckTimers.values()) window.clearTimeout(t);
+    this.editCheckTimers.clear();
   }
 
   async activateBoardView(): Promise<void> {
@@ -525,7 +545,12 @@ export default class PenseedPlugin extends Plugin {
     }
     const currentTrimmed = current.trim();
     const oldTrimmed = oldContent.trim();
-    if (!currentTrimmed || currentTrimmed === oldTrimmed) return;
+    if (!currentTrimmed) return;
+    if (currentTrimmed === oldTrimmed) {
+      // Reverted to the remembered content — clear any stale reminder.
+      if (notePath === this.remindedNotePath) this.clearChangeReminder();
+      return;
+    }
 
     const changedChars = diffChangedChars(oldTrimmed, currentTrimmed);
     const totalChars = currentTrimmed.length;
@@ -534,6 +559,9 @@ export default class PenseedPlugin extends Plugin {
     const threshold = Math.max(minChars, totalChars * ratio);
     if (changedChars > threshold) {
       this.showChangeReminder(notePath);
+    } else if (notePath === this.remindedNotePath) {
+      // Change fell back below the threshold — clear the reminder.
+      this.clearChangeReminder();
     }
   }
 
