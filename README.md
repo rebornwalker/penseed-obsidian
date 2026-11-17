@@ -2,11 +2,14 @@
 
 **Never lose a plot thread — and never spoil your own mystery.**
 
-Penseed is a consistency companion for novelists. It reads each chapter as you
-write it, remembers every planted thread, character detail, and world rule, and
-quietly warns you before a contradiction slips past. It also tracks **what your
-reader knows** at every point in the story — separate from what each character
-knows — so you never give away a twist too early.
+Penseed is an **AI-powered** consistency companion for novelists. You keep
+writing — Penseed's AI does the remembering for you. Every time you analyze a
+chapter, it automatically reads the text, extracts every planted thread,
+character detail, and world rule, and quietly warns you before a contradiction
+slips past. There are no lists to maintain by hand and nothing to update
+manually; the AI builds and refreshes your story notes as you go. It also tracks
+**what your reader knows** at every point in the story — separate from what each
+character knows — so you never give away a twist too early.
 
 ## The problem with long novels
 
@@ -24,7 +27,11 @@ chapter 500 never means re-reading chapters 1 through 499.
 | How it remembers | Re-reads your whole book on every request | Reads each chapter once, then keeps tidy, organized notes on it |
 | Finding a detail | Skims everything from the start | Recalls only the relevant chapters |
 | At 500+ chapters | Slow, costly, forgetful | Fast, affordable, precise |
-| Foreshadowing | Not tracked | Plant → track → payoff, fully managed |
+| Foreshadowing | Not tracked | Plant → track → payoff, fully managed — automatically |
+| Contradictions | You catch them by re-reading | Flagged automatically before your readers notice |
+| Reader knowledge | Not tracked | Tracked separately from character knowledge, so twists stay hidden |
+| Rewrites that ripple | Re-check every later chapter | Re-checks only the chapters your edit affects |
+| Who does the work | You maintain every list by hand | The AI does it as you write |
 
 ## Why Penseed stays fast
 
@@ -43,6 +50,10 @@ from the start. It stays fast and cheap no matter how long your novel gets — a
 it never needs to keep your original text to do it.
 
 ## What Penseed tracks for you
+
+Everything below is tracked **automatically by Penseed's AI** — you don't
+maintain any of it by hand. You write the story; the AI reads it and builds
+these notes for you, updating them whenever a chapter changes.
 
 - **Foreshadowing** — the one thing almost no other tool does. Penseed remembers
   every thread you plant, tells you which ones are still dangling, and which
