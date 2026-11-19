@@ -576,6 +576,7 @@ export interface ForeshadowingItem {
   id: number;
   status: string | null;
   foreshadowing_text_preview: string | null;
+  analysis?: string | null;
   priority: number | null;
   chapter_title?: string | null;
   chapter_id?: number | null;

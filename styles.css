@@ -333,6 +333,26 @@
   visibility: visible;
 }
 
+.penseed-tooltip-analysis {
+  margin-top: 0.5em;
+  padding-top: 0.5em;
+  border-top: 1px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.penseed-tooltip-label {
+  margin-top: 0.5em;
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-faint);
+}
+
+.penseed-tooltip-label:first-child {
+  margin-top: 0;
+}
+
 /* ---- Analysis review modal (Phase 0.14) ---- */
 
 .penseed-review-modal {

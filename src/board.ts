@@ -331,17 +331,29 @@ export class ForeshadowingBoardView extends ItemView {
   }
 
   private showTooltip(item: ForeshadowingItem, card: HTMLElement): void {
-    const text = item.foreshadowing_text_preview;
-    // Only surface a tooltip when the card actually truncates the text.
-    if (!text || text.length <= 80) return;
+    const text = item.foreshadowing_text_preview || "";
+    const analysis = (item.analysis || "").trim();
+    // Surface a tooltip when the card truncates the text, or when there's an
+    // analysis to reveal beyond the visible quote.
+    const textTruncated = text.length > 80;
+    if (!textTruncated && !analysis) return;
 
     if (!this.tooltipEl) {
       this.tooltipEl = document.body.createDiv({ cls: "penseed-card-tooltip" });
     }
     const tooltip = this.tooltipEl;
-    tooltip.textContent = text;
+    tooltip.empty();
     tooltip.removeClass("is-visible");
     if (!tooltip.isConnected) document.body.appendChild(tooltip);
+
+    if (textTruncated) {
+      tooltip.createDiv({ cls: "penseed-tooltip-label", text: "Foreshadowing text" });
+      tooltip.createDiv({ text });
+    }
+    if (analysis) {
+      tooltip.createDiv({ cls: "penseed-tooltip-label", text: "Analysis" });
+      tooltip.createDiv({ cls: "penseed-tooltip-analysis", text: analysis });
+    }
 
     const rect = card.getBoundingClientRect();
     const tipRect = tooltip.getBoundingClientRect();
