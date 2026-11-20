@@ -21,6 +21,13 @@ const COLUMNS: Array<{ status: string; label: string }> = [
   { status: "cancelled", label: "Cancelled" },
 ];
 
+const PRIORITY_LEVELS: Array<{ level: number; label: string }> = [
+  { level: 1, label: "Low" },
+  { level: 2, label: "Medium" },
+  { level: 3, label: "High" },
+  { level: 4, label: "Critical" },
+];
+
 function truncate(text: string | null | undefined, max = 80): string {
   if (!text) return "";
   return text.length > max ? text.slice(0, max).trimEnd() + "…" : text;
@@ -181,6 +188,7 @@ export class ForeshadowingBoardView extends ItemView {
     }
 
     this.renderHeader(projects);
+    this.renderLegend();
     this.boardEl = container.createDiv({ cls: "penseed-board-columns" });
     this.boardEl.createDiv({
       cls: "penseed-board-loading",
@@ -226,6 +234,17 @@ export class ForeshadowingBoardView extends ItemView {
     refreshBtn.addEventListener("click", () => {
       void this.loadBoard();
     });
+  }
+
+  private renderLegend(): void {
+    const legend = this.contentEl.createDiv({ cls: "penseed-board-legend" });
+    for (const p of PRIORITY_LEVELS) {
+      const item = legend.createDiv({ cls: "penseed-board-legend-item" });
+      item.createSpan({
+        cls: `penseed-priority-dot penseed-priority-${p.level}`,
+      });
+      item.createSpan({ cls: "penseed-board-legend-label", text: p.label });
+    }
   }
 
   private renderColumns(): void {

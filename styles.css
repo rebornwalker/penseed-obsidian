@@ -153,6 +153,28 @@
   background: var(--background-modifier-hover);
 }
 
+.penseed-board-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.9em;
+  flex-shrink: 0;
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+.penseed-board-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+}
+
+.penseed-board-legend-item .penseed-priority-dot {
+  margin-top: 0;
+  width: 0.5em;
+  height: 0.5em;
+}
+
 .penseed-board-columns {
   flex: 1;
   display: grid;
@@ -246,10 +268,14 @@
 }
 
 .penseed-priority-2 {
-  background: var(--color-orange);
+  background: var(--color-yellow);
 }
 
 .penseed-priority-3 {
+  background: var(--color-orange);
+}
+
+.penseed-priority-4 {
   background: var(--color-red);
 }
 
