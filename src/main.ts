@@ -9,6 +9,7 @@ import {
   listProjects,
   createChapter,
   listChapters,
+  listVolumes,
   listEntities,
   listForeshadowings,
   startSingleReanalysis,
@@ -64,6 +65,10 @@ import {
 import { notify } from "./notify";
 import { extractChapterNumber } from "./chapter";
 import { assignPluginChapterNumbers } from "./chapterNumbering";
+import {
+  inferFileVolume,
+  buildVolumeNumberMap,
+} from "./volumeMapping";
 import {
   classifyManuscriptFiles,
   detectLowDensityFolders,
@@ -595,6 +600,40 @@ export default class PenseedPlugin extends Plugin {
     await this.analyzeCurrentNote();
   }
 
+  // Phase 7.0: determine the project's top-level folder and (optionally) the
+  // first-level sub-folder acting as a volume, from a note's position in the vault.
+  // Top-level folder → project; sub-folder → volume; project root file → unassigned.
+  private resolveVolumeForFile(file: TFile): {
+    projectFolderPath: string;
+    volumeFolderName: string | null;
+  } {
+    const parent = file.parent;
+    if (!parent || parent.isRoot()) {
+      return { projectFolderPath: "", volumeFolderName: null };
+    }
+    const grandparent = parent.parent;
+    const parentIsTopLevel = !grandparent || grandparent.isRoot();
+    if (parentIsTopLevel) {
+      return { projectFolderPath: parent.path, volumeFolderName: null };
+    }
+    return { projectFolderPath: grandparent.path, volumeFolderName: parent.name };
+  }
+
+  // Phase 7.0: map a volume sub-folder to its volume number (1..N by first-appearance
+  // order across all markdown files under the project folder).
+  private volumeFolderNumber(
+    projectFolderPath: string,
+    volumeFolderName: string
+  ): number | null {
+    const prefix = projectFolderPath === "" ? "" : projectFolderPath + "/";
+    const paths = this.app.vault
+      .getMarkdownFiles()
+      .filter((f) => f.path.startsWith(prefix))
+      .map((f) => f.path);
+    const map = buildVolumeNumberMap(projectFolderPath, paths);
+    return map.get(volumeFolderName) ?? null;
+  }
+
   private async analyzeCurrentNote(): Promise<void> {
     const file = this.app.workspace.getActiveFile();
     if (!file || file.extension !== "md") {
@@ -619,10 +658,11 @@ export default class PenseedPlugin extends Plugin {
       return;
     }
 
-    // Resolve the target project. A remembered folder→project mapping wins when
-    // still valid; otherwise prompt and remember the choice so the same folder
-    // routes to the same project on subsequent analyses.
-    const folderPath = file.parent?.path ?? "";
+    // Resolve the target project. Phase 7.0: the TOP-LEVEL folder maps to the
+    // project (a remembered mapping wins when still valid); a sub-folder within it
+    // is a volume, resolved after the project is known.
+    const { projectFolderPath, volumeFolderName } =
+      this.resolveVolumeForFile(file);
     let projectId: number;
     let projects: PenseedProject[] = [];
     try {
@@ -631,20 +671,49 @@ export default class PenseedPlugin extends Plugin {
         notify("You don't have any projects yet. Create one at Penseed first.");
         return;
       }
-      const mapped = this.settings.folderProjectMap[folderPath];
+      const mapped = this.settings.folderProjectMap[projectFolderPath];
       if (mapped !== undefined && projects.some((p) => p.id === mapped)) {
         projectId = mapped;
       } else {
         const chosen = await this.chooseProject(projects);
         if (chosen === null) return;
         projectId = chosen.id;
-        this.settings.folderProjectMap[folderPath] = projectId;
+        this.settings.folderProjectMap[projectFolderPath] = projectId;
         this.settings.lastProjectId = projectId;
         await this.saveSettings();
       }
     } catch (e) {
       this.notifyError(e);
       return;
+    }
+
+    // Phase 7.0: resolve the volume payload for a note inside a sub-folder. The
+    // filename number is the VOLUME-INTERNAL number; the backend assigns the global
+    // chapter_number. Unassigned notes (project root) keep the old global-number path.
+    let volumePayload: {
+      volumeId: number;
+      volumeInternalNumber: number;
+    } | null = null;
+    if (volumeFolderName !== null) {
+      const internalNumber = extractChapterNumber(file.basename);
+      const volumeNumber = this.volumeFolderNumber(
+        projectFolderPath,
+        volumeFolderName
+      );
+      if (internalNumber !== null && volumeNumber !== null) {
+        try {
+          const volumes = await listVolumes(apiUrl, token, projectId);
+          const match = volumes.find((v) => v.volume_number === volumeNumber);
+          if (match) {
+            volumePayload = {
+              volumeId: match.id,
+              volumeInternalNumber: internalNumber,
+            };
+          }
+        } catch (e) {
+          console.warn("[Penseed] Failed to resolve volume id:", e);
+        }
+      }
     }
 
     const notice = new Notice("Analyzing with Penseed...", 0);
@@ -667,7 +736,8 @@ export default class PenseedPlugin extends Plugin {
           file.basename,
           parsedChapterNumber,
           wordCount,
-          content
+          content,
+          volumePayload
         );
         chapter = created.chapter;
         isNew = created.isNew;
@@ -694,7 +764,7 @@ export default class PenseedPlugin extends Plugin {
           return;
         }
         projectId = chosen.id;
-        this.settings.folderProjectMap[folderPath] = projectId;
+        this.settings.folderProjectMap[projectFolderPath] = projectId;
         this.settings.lastProjectId = projectId;
         await this.saveSettings();
       }
@@ -1757,7 +1827,8 @@ export default class PenseedPlugin extends Plugin {
   private async buildManuscriptChapters(
     files: TFile[],
     classified: ClassifiedFile[],
-    includedPaths: Set<string>
+    includedPaths: Set<string>,
+    projectId: number
   ): Promise<BatchSyncChapterInput[][]> {
     const keptFiles = files.filter((_, i) =>
       includedPaths.has(classified[i].path)
@@ -1766,17 +1837,55 @@ export default class PenseedPlugin extends Plugin {
     const assigned = assignPluginChapterNumbers(
       kept.map((c) => ({ basename: c.basename, number: c.number }))
     );
+
+    // Phase 7.0: folder → volume mapping. Volume number = first-appearance order of
+    // sub-folders; volume-internal number = rank within the volume by global
+    // chapter_number. The global chapter_number above is still plugin-computed in
+    // this phase (Phase 7.5 moves that to the backend).
+    const projectFolder = this.resolveFolderForProject(projectId) ?? "";
+    const keptPaths = keptFiles.map((f) => f.path);
+    const volumeNumberMap = buildVolumeNumberMap(projectFolder, keptPaths);
+
+    const volumeRankByIndex = new Map<number, number>();
+    const groups = new Map<
+      string,
+      { index: number; chapterNumber: number | null }[]
+    >();
+    for (let i = 0; i < keptFiles.length; i++) {
+      const info = inferFileVolume(
+        projectFolder,
+        keptFiles[i].path,
+        volumeNumberMap
+      );
+      if (info.volumeFolder === null) continue;
+      if (!groups.has(info.volumeFolder)) groups.set(info.volumeFolder, []);
+      groups
+        .get(info.volumeFolder)!
+        .push({ index: i, chapterNumber: assigned[i].number });
+    }
+    for (const [, members] of groups) {
+      members.sort(
+        (a, b) => (a.chapterNumber ?? 0) - (b.chapterNumber ?? 0)
+      );
+      members.forEach((m, rank) => volumeRankByIndex.set(m.index, rank + 1));
+    }
+
     const chapters: BatchSyncChapterInput[] = [];
     this.syncUploadMap.clear();
     for (let i = 0; i < keptFiles.length; i++) {
       const content = await this.app.vault.read(keptFiles[i]);
       const notePath = keptFiles[i].path;
       const chapterNumber = assigned[i].number;
+      const volumeInfo = inferFileVolume(projectFolder, notePath, volumeNumberMap);
       const chapter: BatchSyncChapterInput = {
         chapter_number: chapterNumber,
         title: keptFiles[i].basename,
         content,
       };
+      if (volumeInfo.volumeFolder !== null) {
+        chapter.volume_number = volumeInfo.volumeNumber;
+        chapter.volume_internal_number = volumeRankByIndex.get(i) ?? null;
+      }
       // Phase 0.59: only attach previous_content for changed chapters (D6);
       // unchanged chapters short-circuit server-side and never read it.
       const remembered = this.getRememberedContent(notePath);
@@ -1862,7 +1971,8 @@ export default class PenseedPlugin extends Plugin {
     const chunks = await this.buildManuscriptChapters(
       files,
       classified,
-      includedPaths
+      includedPaths,
+      projectId
     );
     if (chunks.length === 0) {
       notify("No chapters selected.");

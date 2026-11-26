@@ -28,6 +28,14 @@ export interface PenseedChapter {
   [key: string]: unknown;
 }
 
+export interface PenseedVolume {
+  id: number;
+  project_id: number;
+  volume_number: number;
+  title?: string | null;
+  [key: string]: unknown;
+}
+
 export interface ReanalyzeResult {
   chapter_id: number;
   entity_count: number;
@@ -204,6 +212,26 @@ export async function listChapters(
     apiUrl,
     token,
     `/api/chapters/?${params.toString()}`,
+    "GET"
+  );
+}
+
+/**
+ * Phase 7.0: list volumes for a project. Used to map an inferred folder-based
+ * volume number (1..N) to the backend volume id before submitting a chapter in
+ * volume mode.
+ */
+export async function listVolumes(
+  apiUrl: string,
+  token: string,
+  projectId: number
+): Promise<PenseedVolume[]> {
+  const params = new URLSearchParams();
+  params.set("project_id", String(projectId));
+  return request<PenseedVolume[]>(
+    apiUrl,
+    token,
+    `/api/volumes?${params.toString()}`,
     "GET"
   );
 }
@@ -431,19 +459,30 @@ export async function createChapter(
   title: string,
   chapterNumber: number | null,
   wordCount: number,
-  content: string
+  content: string,
+  volume?: { volumeId: number; volumeInternalNumber: number } | null
 ): Promise<{ chapter: PenseedChapter; isNew: boolean }> {
   // get_or_create returns 201 for a newly created chapter, 200 for an existing
   // one. The status distinguishes first-time analysis from in-place reanalysis.
   // `content` is passed through so the backend can persist the original text
   // (content retention), which the web reanalyze modal later reads back.
-  const { status, json } = await requestRaw(apiUrl, token, "/api/chapters/", "POST", {
+  //
+  // Phase 7.0: when `volume` is provided we submit volume_id + volume_internal_number
+  // and leave the global chapter_number to the backend (volume mode); otherwise we
+  // submit the plugin-computed global chapter_number as before.
+  const body: Record<string, unknown> = {
     title,
-    chapter_number: chapterNumber,
     project_id: projectId,
     word_count: wordCount,
     content,
-  });
+  };
+  if (volume) {
+    body.volume_id = volume.volumeId;
+    body.volume_internal_number = volume.volumeInternalNumber;
+  } else {
+    body.chapter_number = chapterNumber;
+  }
+  const { status, json } = await requestRaw(apiUrl, token, "/api/chapters/", "POST", body);
   return { chapter: json as PenseedChapter, isNew: status === 201 };
 }
 
@@ -701,6 +740,11 @@ export interface BatchSyncChapterInput {
   // Phase 0.59: last fully-analyzed content for the sentence/importance gate
   // (retention OFF). Only attached for changed chapters (D6).
   previous_content?: string;
+  // Phase 7.0: folder→volume mapping. Attached for forward-compat with Phase 7.5,
+  // which moves global chapter_number assignment to the backend. The global
+  // chapter_number above is still plugin-computed in this phase.
+  volume_number?: number | null;
+  volume_internal_number?: number | null;
 }
 
 export interface BatchSyncPreview {

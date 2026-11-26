@@ -77,6 +77,15 @@ export class PenseedSettingTab extends PluginSettingTab {
       },
     ];
 
+    // Phase 7.0: folder → volume mapping is a best-effort convenience, not a
+    // requirement — volumes can always be created and assigned in the web app.
+    const volumeHint: SettingDefinitionItem = {
+      name: "Volumes",
+      desc:
+        "Folders auto-map to volumes as an optional convenience — you can also " +
+        "create volumes and assign chapters in the web app.",
+    };
+
     if (this.plugin.auth.isConnected()) {
       const email = this.plugin.auth.getEmail();
       return [
@@ -88,6 +97,7 @@ export class PenseedSettingTab extends PluginSettingTab {
           },
         },
         ...reminderSettings,
+        volumeHint,
       ];
     }
 
@@ -105,6 +115,7 @@ export class PenseedSettingTab extends PluginSettingTab {
         },
       },
       ...reminderSettings,
+      volumeHint,
     ];
   }
 
