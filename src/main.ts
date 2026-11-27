@@ -29,6 +29,7 @@ import {
   cancelBatchSyncJob,
   getBatchAnalysisStatus,
   resumeCascade,
+  createReferenceDoc,
   BatchSyncChapterInput,
   BatchSyncPreview,
   PendingFanout,
@@ -45,6 +46,7 @@ import {
   OutdatedChaptersModal,
   ClassificationModal,
   SyncPreviewModal,
+  VolumeOrderModal,
   ReplayItem,
   ReanalysisBatchTaskState,
   ReanalysisTarget,
@@ -1807,18 +1809,17 @@ export default class PenseedPlugin extends Plugin {
     }));
     const excludePaths =
       this.settings.chapterRules[projectId]?.excludePaths ?? [];
-    // 信号 2（文件夹密度）：低密度一级子文件夹建议排除，供预览勾选「记住排除」持久化。
-    const lowDensity = detectLowDensityFolders(
+    // 信号 2（文件夹密度）：低密度一级子文件夹 = 参考材料（reference），
+    // 从「excluded」升级为独立 reference 同步（→ /api/reference-docs）；
+    // 用户已持久化排除的路径仍按 excluded 处理（显式排除优先）。
+    const referencePaths = detectLowDensityFolders(
       files.map((f) => f.path),
       folderPath
-    );
-    const mergedExcludes = [
-      ...excludePaths,
-      ...lowDensity.filter((d) => !excludePaths.includes(d)),
-    ];
+    ).filter((d) => !excludePaths.includes(d));
     const classified = classifyManuscriptFiles(
       inputs,
-      mergedExcludes,
+      excludePaths,
+      referencePaths,
       folderPath
     );
     return { files, classified };
@@ -1844,7 +1845,11 @@ export default class PenseedPlugin extends Plugin {
     // this phase (Phase 7.5 moves that to the backend).
     const projectFolder = this.resolveFolderForProject(projectId) ?? "";
     const keptPaths = keptFiles.map((f) => f.path);
-    const volumeNumberMap = buildVolumeNumberMap(projectFolder, keptPaths);
+    let volumeNumberMap = buildVolumeNumberMap(projectFolder, keptPaths);
+    if (volumeNumberMap.size > 1) {
+      const confirmed = await this.confirmVolumeOrder(volumeNumberMap);
+      if (confirmed !== null) volumeNumberMap = confirmed;
+    }
 
     const volumeRankByIndex = new Map<number, number>();
     const groups = new Map<
@@ -1902,6 +1907,20 @@ export default class PenseedPlugin extends Plugin {
       chunks.push(chapters.slice(i, i + 100));
     }
     return chunks;
+  }
+
+  private confirmVolumeOrder(
+    defaultMap: Map<string, number>
+  ): Promise<Map<string, number> | null> {
+    const folders = [...defaultMap.keys()];
+    return new Promise((resolve) => {
+      new VolumeOrderModal(this.app, folders, (order) => {
+        if (order === null) return resolve(null);
+        const map = new Map<string, number>();
+        order.forEach((folder, i) => map.set(folder, i + 1));
+        resolve(map);
+      }).open();
+    });
   }
 
   private async syncManuscript(): Promise<void> {
@@ -1968,10 +1987,39 @@ export default class PenseedPlugin extends Plugin {
       await this.saveSettings();
     }
 
+    // Phase 7.5：reference note → /api/reference-docs（不进章节时间线），
+    // chapter note → 章节时间线。files/classified 平行数组（collectManuscriptFiles 保证）。
+    for (let i = 0; i < classified.length; i++) {
+      const c = classified[i];
+      if (c.verdict !== "reference" || !includedPaths.has(c.path)) continue;
+      try {
+        const content = await this.app.vault.read(files[i]);
+        await withRetry(() =>
+          createReferenceDoc(apiUrl, token, {
+            project_id: projectId,
+            doc_type: "other",
+            title: files[i].basename,
+            filename: files[i].basename,
+            content,
+          })
+        );
+      } catch (e) {
+        this.notifyError(e);
+      }
+    }
+
+    // 章节路径 = includedPaths 去掉 reference（reference 走独立端点）。
+    const chapterIncludedPaths = new Set<string>();
+    for (const c of classified) {
+      if (c.verdict !== "reference" && includedPaths.has(c.path)) {
+        chapterIncludedPaths.add(c.path);
+      }
+    }
+
     const chunks = await this.buildManuscriptChapters(
       files,
       classified,
-      includedPaths,
+      chapterIncludedPaths,
       projectId
     );
     if (chunks.length === 0) {

@@ -487,6 +487,31 @@ export async function createChapter(
 }
 
 /**
+ * Phase 7.5: create a reference document (setting material — story bible,
+ * rules, character sheets) isolated from the chapter timeline. The backend
+ * persists only a content hash (+ encrypted copy when retention is on).
+ */
+export async function createReferenceDoc(
+  apiUrl: string,
+  token: string,
+  payload: {
+    project_id: number;
+    doc_type?: string;
+    title?: string | null;
+    filename?: string | null;
+    content?: string | null;
+  }
+): Promise<{ id: number }> {
+  return request<{ id: number }>(
+    apiUrl,
+    token,
+    "/api/reference-docs",
+    "POST",
+    payload
+  );
+}
+
+/**
  * Foreshadowing extraction. The backend also exposes an SSE streaming
  * endpoint (/extract-stream), but `fetch`-based SSE is blocked by the
  * backend CORS allowlist from Obsidian's `app://obsidian.md` origin.

@@ -744,6 +744,13 @@ body.penseed-resizing {
   gap: 0.5em;
 }
 
+/* ---- Volume order confirm modal ---- */
+.penseed-result .penseed-volume-order-btn {
+  flex-shrink: 0;
+  min-width: 1.6em;
+  padding: 0.1em 0.4em;
+}
+
 /* ---- Sync whole manuscript: intro copy ---- */
 
 .penseed-result .penseed-manuscript-intro {

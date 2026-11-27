@@ -18,7 +18,7 @@ export interface ClassifierInput {
   number: number | null;
 }
 
-export type Verdict = "chapter" | "excluded" | "needs-confirm";
+export type Verdict = "chapter" | "excluded" | "needs-confirm" | "reference";
 
 export interface ClassifiedFile extends ClassifierInput {
   pattern: string;
@@ -77,25 +77,35 @@ function frontBackPosition(
   return pos;
 }
 
-// 汇总：三级级联 → verdict + defaultInclude
+// 汇总：级联 → verdict + defaultInclude。
+// 优先级：持久化 excluded（用户显式排除）> chapter（带编号）> reference（低密度文件夹里的无编号 note）> needs-confirm。
+// 编号文件永远是 chapter，即使落在低密度文件夹里（ch01.md 就是章节）。
 export function classifyManuscriptFiles(
   files: ClassifierInput[],
   excludePaths: string[],
+  referencePaths: string[],
   projectFolder: string
 ): ClassifiedFile[] {
   const pos = frontBackPosition(files);
   const excluded = new Set(excludePaths.map((p) => p.replace(/\/+$/, "")));
+  const references = new Set(referencePaths.map((p) => p.replace(/\/+$/, "")));
 
   return files.map((f) => {
     const pattern = normalizePattern(f.basename);
     const isExcluded = [...excluded].some(
       (e) => f.path === e || f.path.startsWith(e + "/")
     );
+    const isReference = [...references].some(
+      (r) => f.path === r || f.path.startsWith(r + "/")
+    );
     const p = pos.get(f.path) ?? null;
     if (isExcluded) return { ...f, pattern, verdict: "excluded", defaultInclude: false };
     if (f.number !== null) {
       return { ...f, pattern, verdict: "chapter", defaultInclude: true };
     }
+    // Phase 7.5：低密度文件夹里的无编号 note = 设定文档（story bible/人物设定），
+    // 从「excluded」升级为明确的 reference 同步（→ /api/reference-docs），不污染章节时间线。
+    if (isReference) return { ...f, pattern, verdict: "reference", defaultInclude: true };
     // 仅前置无编号（序/楔子，对应负编号位置锚定）默认纳入；后置无编号默认不纳入——
     // 插件端无法可靠区分「尾声」与「Story Bible/人物设定」等参考 note（见 spec 2.37.5），
     // 保守起见把后置交给预览确认 D。

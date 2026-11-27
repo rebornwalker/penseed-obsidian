@@ -835,6 +835,9 @@ export class ClassificationModal extends Modal {
     const chapters = this.classified
       .filter((f) => f.verdict === "chapter")
       .sort(byNumber);
+    const reference = this.classified
+      .filter((f) => f.verdict === "reference")
+      .sort(byNumber);
     const review = this.classified
       .filter((f) => f.verdict === "needs-confirm")
       .sort(byNumber);
@@ -842,7 +845,19 @@ export class ClassificationModal extends Modal {
       .filter((f) => f.verdict === "excluded")
       .sort(byNumber);
 
-    // 有 excluded 时才解释为何排除：防止剧透 + 非正文 + 稀疏文件夹自动识别 + 历史排除。
+    // 有 reference 时解释：设定文档与章节时间线隔离，防剧透污染。
+    if (reference.length > 0) {
+      const whyReference = contentEl.createDiv({ cls: "penseed-manuscript-excluded" });
+      whyReference.createDiv({
+        text: "Reference documents",
+        cls: "penseed-warning-title",
+      });
+      whyReference.createDiv({
+        text: "These notes look like setting material — story bibles, character sheets, world rules — not story chapters. Penseed keeps them as reference documents, separate from your chapter timeline, so spoilers don't leak into your analysis. Untick any that are actually chapters.",
+      });
+    }
+
+    // 有 excluded 时才解释为何排除：防止剧透 + 非正文 + 历史排除。
     if (excluded.length > 0) {
       const whyExcluded = contentEl.createDiv({ cls: "penseed-manuscript-excluded" });
       whyExcluded.createDiv({
@@ -860,6 +875,9 @@ export class ClassificationModal extends Modal {
 
     if (chapters.length > 0) {
       this.renderGroup(list, "Chapters (auto)", chapters, true);
+    }
+    if (reference.length > 0) {
+      this.renderGroup(list, "Reference documents", reference, true);
     }
     if (review.length > 0) {
       this.renderGroup(list, "Review these notes", review, true, false, true);
@@ -1031,6 +1049,86 @@ export class SyncPreviewModal extends Modal {
     if (!this.settled) {
       this.settled = true;
       this.resolve(false);
+    }
+    this.contentEl.empty();
+  }
+}
+
+/**
+ * Phase 7.5: cross-volume ordering gate. Lists the detected volumes (first-level
+ * subfolders) with up/down buttons so the author can set their reading order
+ * before sync. Resolves the final folder order, or null on cancel.
+ */
+export class VolumeOrderModal extends Modal {
+  private resolve: (order: string[] | null) => void;
+  private settled = false;
+  private order: string[];
+  private listEl: HTMLElement | null = null;
+
+  constructor(app: App, folders: string[], resolve: (order: string[] | null) => void) {
+    super(app);
+    this.order = [...folders];
+    this.resolve = resolve;
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    this.modalEl.addClass("penseed-result-modal");
+    contentEl.addClass("penseed-result");
+
+    contentEl.createEl("h2", { text: "Confirm volume order" });
+    contentEl.createDiv({
+      text: "Set the reading order of your books/volumes. Chapters are numbered across the whole manuscript in this order.",
+    });
+
+    this.listEl = contentEl.createEl("ul");
+    this.listEl.addClass("penseed-item-list");
+    this.renderList();
+
+    const actions = contentEl.createDiv({ cls: "penseed-manuscript-actions" });
+    const confirmBtn = actions.createEl("button", { text: "Confirm order", cls: "mod-cta" });
+    confirmBtn.addEventListener("click", () => this.settle(this.order));
+    const cancelBtn = actions.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => this.settle(null));
+  }
+
+  private renderList(): void {
+    if (!this.listEl) return;
+    const list = this.listEl;
+    list.empty();
+    this.order.forEach((folder, i) => {
+      const row = list.createEl("li");
+      row.addClass("penseed-item-row");
+      row.createSpan({ text: folder });
+      const up = row.createEl("button", { text: "↑" });
+      up.addClass("penseed-volume-order-btn");
+      up.disabled = i === 0;
+      up.addEventListener("click", () => this.move(i, i - 1));
+      const down = row.createEl("button", { text: "↓" });
+      down.addClass("penseed-volume-order-btn");
+      down.disabled = i === this.order.length - 1;
+      down.addEventListener("click", () => this.move(i, i + 1));
+    });
+  }
+
+  private move(from: number, to: number): void {
+    const [item] = this.order.splice(from, 1);
+    this.order.splice(to, 0, item);
+    this.renderList();
+  }
+
+  private settle(order: string[] | null): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.resolve(order);
+    this.close();
+  }
+
+  onClose(): void {
+    if (!this.settled) {
+      this.settled = true;
+      this.resolve(null);
     }
     this.contentEl.empty();
   }
